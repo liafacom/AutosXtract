@@ -53,7 +53,7 @@ jobs:
             echo "::notice::no mkdocs.yml at the repository root yet — nothing to build"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.detect.outputs.mkdocs == 'true'
         with:
           python-version: "3.11"

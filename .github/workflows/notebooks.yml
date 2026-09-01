@@ -44,7 +44,7 @@ jobs:
             echo "::notice::no notebooks/ yet — nothing to execute"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.detect.outputs.found == 'true'
         with:
           python-version: "3.11"
