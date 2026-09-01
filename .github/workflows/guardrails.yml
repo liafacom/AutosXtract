@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Review what this pull request adds to the dependency graph
         uses: actions/dependency-review-action@v5
@@ -115,7 +115,7 @@ jobs:
     steps:
       # Full history: `base..head` needs both ends present, and the default
       # shallow clone has neither.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

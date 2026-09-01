@@ -36,7 +36,7 @@ jobs:
       # then it stops reporting the failure that matters.
       mkdocs: ${{ steps.detect.outputs.mkdocs }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # `hashFiles` reads the workspace, so it can only be evaluated AFTER the
       # checkout. Putting `if: hashFiles('mkdocs.yml') != ''` on the job itself

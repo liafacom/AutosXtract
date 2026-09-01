@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Same reasoning as in docs.yml: `hashFiles` needs the workspace, so the
       # guard is a step after the checkout and not an `if:` on the job. The

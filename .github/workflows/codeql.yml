@@ -54,7 +54,7 @@ jobs:
       actions: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # `build-mode: none` is the correct value for Python: there is nothing to
       # compile, and CodeQL extracts straight from the sources. Leaving it unset
