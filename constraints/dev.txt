@@ -40,7 +40,7 @@
 # where nothing is editable.
 
 annotated-types==0.8.0
-antlr4-python3-runtime==4.9.3
+antlr4-python3-runtime==4.13.2
 asn1crypto==1.5.1
 ast-serialize==0.8.0
 certifi==2026.7.22
@@ -72,7 +72,7 @@ pre-commit==4.6.2
 protobuf==7.36.0
 pyclipper==1.4.0
 pydantic==2.13.5
-pydantic-core==2.46.5
+pydantic-core==2.48.0
 pygments==2.21.0
 pymupdf==1.28.2
 pytest==9.1.1
