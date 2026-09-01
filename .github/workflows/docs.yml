@@ -117,4 +117,4 @@ jobs:
       # message that does not obviously say so.
       - uses: actions/configure-pages@v5
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
