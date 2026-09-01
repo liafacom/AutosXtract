@@ -105,7 +105,7 @@ jobs:
       # of "the same" tree are two artefacts, and then the checksum on the
       # Release does not describe what is on PyPI — which defeats the reason
       # for attaching them at all.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
