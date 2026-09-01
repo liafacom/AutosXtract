@@ -93,7 +93,15 @@ def main() -> int:
         )
         return 1
 
-    py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    # MAJOR.MINOR, deliberately without the patch. The interpreter's patch
+    # release does not take part in resolution — markers and wheel tags key on
+    # `3.13`, not on `3.13.5` — so recording it claimed a precision the file
+    # does not have, and made a REQUIRED check hostage to CPython's release
+    # calendar: `setup-python: "3.13"` picks up the newest patch, and the
+    # `pinned` job then failed on a comment line while all 51 pins were
+    # identical. Measured on the first push: 3.13.5 against the runner's
+    # 3.13.15, zero pins different.
+    py = f"{sys.version_info.major}.{sys.version_info.minor}"
     lines = [
         "# ── DEV constraints — pins for the DEVELOPMENT environment and CI ────────",
         "#",
