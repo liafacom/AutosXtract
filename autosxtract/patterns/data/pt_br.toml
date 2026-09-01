@@ -1,0 +1,427 @@
+# AutosXtract pattern catalogue — Brazilian legal Portuguese.
+#
+# This is the pack the library was measured on, and the one that loads when
+# ``Config.language`` names no other. It is layered ON TOP of ``base.toml``:
+# only what actually depends on the language and the domain lives here.
+#
+# The English-in-the-code rule stops at this file. Names, docstrings and
+# messages are English so the library is usable outside Brazil; the patterns
+# are Portuguese because they describe the corpus — the conformity stamp, the
+# enclitic pronouns, the forensic abbreviations, the identity-card markers.
+# This file is the adaptation seam: another language ships another pack and the
+# Python does not change.
+
+# ── metrics ─────────────────────────────────────────────────────────────
+
+[metrics.allowed_chars]
+why = '''
+The repertoire a document of this corpus prints. Everything outside it counts as an odd
+character, and the ratio of odd characters is the first evidence that what came back is not
+text. Adapting to another language means adding its letters here.
+'''
+pattern = '''[^a-zA-Z0-9áàâãéèêíìîóòôõúùûçÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ.,;:!?()\\/\"'`\-–—ºª°%\n\r\t ]'''
+
+[metrics.stopwords]
+why = '''
+Function words of the corpus language — the cheapest and strongest discriminator for 'is this
+Portuguese?'. Running prose sits between 0.20 and 0.30; an unreadable transcription sits below
+0.03. Written as running text on purpose: this list is meant to be read and edited by whoever
+adapts the library to another language, and sixty quoted strings are not readable.
+'''
+words = '''
+
+de da do das dos e a o os as em no na nos nas para por com que se ao aos à às um uma uns umas
+ou mas como quando onde este esta esse essa aquele aquela seu sua seus suas pelo pela pelos pelas
+nao não sim ser foi sao são tem ter entre sobre sem até após desde
+'''
+
+[metrics.domain]
+why = '''
+Vocabulary expected from the domain. This is the only criterion that can ADD to the score.
+Swapping this list adapts the library to another corpus; leaving it empty turns the adjustment
+off without breaking anything.
+'''
+patterns = [
+    '\bprocesso\b',
+    '\bautos\b',
+    '\bsenten[cç]a\b',
+    '\bac[oó]rd[aã]o\b',
+    '\bdecis[aã]o\b',
+    '\bdespacho\b',
+    '\bpeti[cç][aã]o\b',
+    '\brequerente\b',
+    '\brequerido\b',
+    '\bexequente\b',
+    '\bexecutado\b',
+    '\bimpetrante\b',
+    '\bimpetrado\b',
+    '\btribunal\b',
+    '\bvara\b',
+    '\bjuiz\b',
+    '\bdesembargador\b',
+    '\bminist[eé]rio p[uú]blico\b',
+]
+
+# ── markers ─────────────────────────────────────────────────────────────
+
+[markers.unread]
+why = '''
+What a vision model emits when it cannot read a passage. Legitimate in small proportion — a
+signature in the middle of a certificate — but on a wholly illegible page the model LOOPS,
+repeating the marker until the token budget runs out. Measured on a real archive: one document
+returned 6,281 characters of which 41 were real content, in 319 s, and counting the raw text
+made that loop look like the richest document in the archive.
+'''
+pattern = '\[(?:IL+EG[IÍ]VEL|ILLEGIBLE|CARIMBO|STAMP|ASSINATURA|SIGNATURE|TRECHO\s+DANIFICADO|DAMAGED|SELO|SEAL|RUBRICA|IMAGEM|IMAGE|LOGO|BRAS[AÃ]O|VAZIO|EMPTY|EM\s+BRANCO|BLANK|N[AÃ]O\s+IDENTIFIC\w*|UNIDENTIFIED|TEXTO\s+[^\]]*)[^\]]*\]'
+flags = ["IGNORECASE"]
+
+# ── lexicon ─────────────────────────────────────────────────────────────
+
+[lexicon.short_words]
+why = '''
+Function words of two letters or fewer live separately: the tokeniser requires 3+ characters,
+but the re-segmentation of run-together words needs them to split ``ESTADODEMATOGROSSODOSUL``
+correctly.
+'''
+words = 'de do da no na em os as ao um no dos das nos nas pelo pela que com sem por para'
+
+[lexicon.builtin]
+why = '''
+The built-in floor: Portuguese function words plus recurring legal vocabulary. A reasonable
+floor, not a truth — a lexicon counted from your own validated texts is measurably better. One
+warning worth more than the list itself: a lexicon that is too small makes correct text look
+like junk. With this one the thresholds still hold, but average coverage drops and more lines
+fall into ``suspect`` — the safe side of the error, since the text passes and only the page's
+confidence falls.
+'''
+words = '''
+
+processo autos peticao peticionamento requerimento requerente requerido exequente
+executado impetrante impetrado autor reu reus autora exequentes executados partes
+sentenca acordao decisao despacho determinacao deferimento indeferimento
+mandado citacao intimacao notificacao penhora arresto sequestro avaliacao
+certidao certifico juntada vista prazo preclusao prescricao decadencia
+tribunal comarca vara juizo juiz juiza julgador desembargador ministro
+escrivao escrivania cartorio secretaria diretor chefe oficial justica
+ministerio publico procurador promotor defensor advogado advogada
+fazenda nacional estadual municipal uniao estado municipio publica
+execucao fiscal divida ativa credito tributario imposto taxa multa juros
+correcao monetaria honorarios custas emolumentos verba sucumbencia
+recurso apelacao agravo embargos declaracao instrumento peticao inicial
+contestacao replica impugnacao manifestacao alegacoes finais razoes
+audiencia conciliacao instrucao julgamento sessao pauta
+documento documentos copia original autenticada digitalizada assinatura
+assinado digitalmente codigo verificacao conferencia protocolo
+data hora dia mes ano folha folhas paginas
+nome nomes qualificacao qualificados portador inscrito cadastro
+endereco rua avenida praca numero bairro cidade telefone
+valor valores total pagamento deposito transferencia conta banco agencia
+bem bens imovel imoveis movel veiculo matricula registro
+contrato instrumento particular escritura publica compra venda locacao
+lei artigo artigos inciso incisos paragrafo paragrafos alinea codigo civil
+penal processual constituicao federal norma resolucao provimento portaria
+prova provas testemunha testemunhas pericia perito laudo
+deferir indeferir determinar homologar julgar procedente improcedente extinto
+cumprimento sentenca titulo executivo judicial extrajudicial
+oficio comunicacao expedicao expedido cumprido devolvido negativo positivo
+segue seguem conforme nos termos face tendo vista razao pelo que
+respeitosamente excelentissimo senhor doutor meritissimo egregio colenda
+presente presentes anexo anexos junto juntada acostado
+para com por sem sobre entre desde apos ante perante conforme segundo
+nao sim mais menos muito pouco todo toda todos todas
+ser estar ter haver fazer poder dever ficar seguir constar
+vem vem vir vao vao vao requerer requereu requerendo alegar alegou alegando
+informar informou informando comunicar comunicou juntar juntou apresentar
+apresentou apresentando comparecer compareceu manifestar manifestou receber
+recebeu expedir expediu expedido cumprir cumpriu intimar intimou citar citou
+determinou proferiu decidiu julgou homologou deferiu indeferiu extinguiu
+reconhecer reconheceu declarar declarou considerar considerou verificar
+verificou constatar constatou solicitar solicitou providenciar aguardar
+aguarda decorrido decorrer transcorrido tramite tramitacao andamento
+pedido pedidos requerimentos parte partes interessado interessados
+acima abaixo referido referida citado citada supra mencionado mencionada
+primeiro segundo terceiro ultimo ultima anterior posterior atual
+'''
+
+# ── lines ───────────────────────────────────────────────────────────────
+
+[lines.reference_only]
+why = '''
+A 'reference' line: case number, date, amount, folio. It is NEVER junk, however strange it looks
+— it is precisely what must not disappear.
+'''
+pattern = '^[\s\d.\-/:ºªnN°ºfFlsLS$R,]+$'
+
+[lines.date]
+why = '''
+A date in any of the forms the corpus prints, the spelled-out month included. Like a case number
+it is structural text and is never condemned on coverage.
+'''
+pattern = '\d{1,2}[/.\-\s]+(?:de\s+)?\w+[/.\-\s]+(?:de\s+)?\d{2,4}'
+flags = ["IGNORECASE"]
+
+[lines.anchor]
+why = '''
+Structural anchors: if the line has one of these it is real text (an address, an e-mail, a phone
+number, a URL) even with a misread name prefix.
+'''
+pattern = '@|https?://|www\.|e-?mail|endere[çc]o|\bCEP\b|\bfone\b|\btel\b|\brua\b|\bav\.?\b|\bpra[çc]a\b|\d{2,3}\.\d{3}-\d{3}|\(\d{2}\)\s?\d'
+flags = ["IGNORECASE"]
+
+[lines.job_title]
+why = '''
+Job-title words — the neighbouring line is usually a NAME, not junk. The spelling variants
+(``ju[íi1l]z``) are there because this line sits under a signature and is exactly where the OCR
+errs.
+'''
+pattern = 'ju[íi1l]z|escriv|tabeli|procurad|promotor|of[íi1]cial|advogad|chefe\s+de\s+cart|diretor|delegad|anal[íi]sta|assessor|secret[áa]ri|defensor|perito|de\s+direito|de\s+justi[çc]a'
+flags = ["IGNORECASE"]
+
+[lines.caps_name]
+why = '''
+A line that looks like a PROPER NAME: 2 to 4 words, no digits. One name-word alternation —
+capitalised, all caps, or a nobiliary particle — repeated 2 to 4 times.
+'''
+pattern = '''^(?:(?:[A-ZÀ-Þ][a-zà-þ']+|[A-ZÀ-Þ]{2,}|d[aeo]s?|e)\.?\s+){1,3}(?:[A-ZÀ-Þ][a-zà-þ']+|[A-ZÀ-Þ]{2,}|d[aeo]s?|e)\.?$'''
+
+[lines.stamp_keywords]
+why = '''
+Stamp, seal and logo text. If one of these lines falls inside a signature detector's box, the
+box is NOT a signature — it is a seal, a crest or a QR code. Measured: a detector trained on
+contract signatures fired on 19% of the pages of a legal archive and most were false positives.
+'''
+pattern = 'selo\s+de\s+autentic|autenticidade|conf[ei]re\s+com|confer[êe]ncia|\bICP[- ]?Brasil|verifica[çc][ãa]o|protocol|reconhe[çc]o|\bDJE?\b|tabeli(?:on|ão)|\bfé\s+p[úu]blic|junta\s+comercial|corregedor|minist[ée]rio\s+p[úu]blic|poder\s+judici|rep[úu]blica\s+federativa|tribunal|entregue|recebi(?:do)?\s+em|prenota[çc]'
+flags = ["IGNORECASE"]
+
+# ── prose ───────────────────────────────────────────────────────────────
+
+[prose.abbreviation]
+why = '''
+Abbreviations ending in a full stop without closing a sentence. Two families: a closed list of
+forensic vocabulary, and the lone initial (``B.``, ``R.``, ``C.``), which in an address or a
+proper name is never the end of a period. Treating every stop as an ending broke sentences
+mid-way.
+'''
+pattern = '(?:\b(?:n|n[ºo]|art|arts|fls?|pág|p|inc|par|§|Sr|Sra|Srs|Dr|Dra|Drs|Exm[oa]|Ilm[oa]|Av|R|Rua|Al|Pça|Cia|Ltda|S\.?A|Jr|Proc|Cod|Cód|Est|Mun|Cap|Vol|Ed|Obs|Ref|Cf|Op|cit|etc|ap|apto|bl|qd|lt)\.\s*$)|(?:\b[A-ZÀ-Ö]\.\s*$)'
+flags = ["IGNORECASE"]
+
+[prose.page_number_only]
+why = '''
+A page-number marker alone on its line: a stamp, not content. It interrupts the sentence, so it
+goes without leaving a break and the two halves meet.
+'''
+pattern = '^\s*(?:fls?\.?\s*\d+|\d{1,3}|p[áa]g(?:ina)?\.?\s*\d+)\s*$'
+flags = ["IGNORECASE"]
+
+[prose.enclitic]
+why = '''
+Unstressed oblique pronouns — a closed set in Portuguese. After an end-of-line hyphen they
+signal enclisis (``mantê-los``), not typographic hyphenation. Always removing the hyphen would
+produce ``mantêlos``; always keeping it would produce ``consti-tuição``. Neither is acceptable,
+and the closed set is what makes the distinction safe.
+'''
+pattern = '(?:l[oa]s?|lhes?|n[oa]s?|m[eo]|te|se|v[oo]s|[oa]s?)\b'
+flags = ["IGNORECASE"]
+
+[prose.wrong_currency_symbol]
+why = '''
+Variants the OCR produces for ``R$``. Only substituted when followed by a monetary form — the
+lookahead is what separates the corrupted symbol from a legitimate word (``RS`` in
+``RESSALVADO``, ``RE`` in ``RECURSO``). Seven variants in a single document, and the effect is
+silent: the amount IS in the text and the consumer's regex does not see it.
+'''
+pattern = '(?<![A-Za-zÀ-ÿ0-9])(?:RS|R2|E\$|8\$|SR\$|3R\$|H\$|RE)\s*(?=\d{1,3}(?:[.,]\d{3})*[.,]\d{2}(?!\d))'
+replacement = "R$ "
+
+[prose.english_thousands]
+why = '''
+``9,159.70`` and ``5,000,00``: English thousands and decimals, impossible in Portuguese. There
+is no ambiguity and the right reading is unique, which is why the swap is safe; ambiguous forms
+stay out on purpose. The replacement is computed in code, since it depends on which separator
+ends up last.
+'''
+pattern = '\b\d{1,3}(?:,\d{3})+[.,]\d{2}\b'
+
+[prose.currency_split]
+why = '''
+``R$\n115.104,90`` — the symbol split from the number by a line break. Nothing legitimate
+separates them like that, and rejoining before the unwrap keeps a lone ``R$`` line from becoming
+a stray paragraph.
+'''
+pattern = 'R\$\s*\n\s*(?=\d)'
+replacement = "R$ "
+
+[prose.currency_glued]
+why = '''
+``R$30.068,67`` -> ``R$ 30.068,67``. Unambiguous: no legitimate token glues the symbol to a
+digit. Measured: 6 of 15 amounts in the archive arrived glued.
+'''
+pattern = 'R\$(?=\d)'
+replacement = "R$ "
+
+[prose.section_mark]
+why = '``§$`` -> ``§§``: the dollar sign never follows the section mark.'
+pattern = '§\$'
+replacement = "§§"
+
+[prose.stamp_line]
+why = '''
+Lines of the digital conformity stamp. Kept apart from ``stamp.conformity`` because the question
+differs: there the stamp is REMOVED so the text can be measured; here it is SEPARATED and
+returned at the end of the text. Why separate it: the stamp is printed IN THE MIDDLE of the
+body, on every page, and rebuilding prose would glue it inside a sentence. Measured on a real
+archive: on a 2008 document it injects the date ``26/11/2013`` seven times and a case number
+belonging to ANOTHER case, all within a few characters of the real text — and whoever reads the
+text afterwards picks dates by textual proximity.
+'''
+pattern = '(?:Este\s+documento\s+[ée]\s+c[oó]pia)|(?:assinado\s+digitalmente\s+por)|(?:Liberado\s+nos\s+autos\s+digitais)|(?:Para\s+(?:acessar|conferir)\s+o?s?\s*(?:autos|original))|(?:c[oó]digo\s+de\s+verifica[cç][ãa]o)|(?:https?://\S*(?:pastadigital|docdigital|esaj))'
+flags = ["IGNORECASE"]
+
+# ── response ────────────────────────────────────────────────────────────
+
+[response.delimited]
+why = '''
+The delimiters ``response.prompt`` asks the model for. A batch carries more than one page and
+the model returns a delimited block PER PAGE, which is why the scan is ``finditer`` and not
+``search``: with ``search`` only the first block survived and the batch's other pages evaporated
+— a silent truncation, measured on a 2-page batch where the second disappeared entirely.
+'''
+pattern = '===\s*INICIO DA TRANSCRICAO\s*===\s*(?P<body>.*?)(?:===\s*FIM DA TRANSCRICAO\s*===|\Z)'
+flags = ["IGNORECASE", "DOTALL"]
+
+[response.leading_meta]
+why = '''
+Fallback 2: opening paragraphs that describe the document instead of transcribing it. Measured
+on a 27B thinking model, that preamble runs past 400 characters. Deliberately conservative —
+when in doubt, preserve.
+'''
+pattern = '^\s*(?:(?:O\s+usu[áa]rio|A\s+imagem|Vou\s+|Segue\s+|Aqui\s+est[áa]|Estrutura\s+identificada|Elementos\s+identificados|Transcri[çc][ãa]o\s+(?:fiel|do|da)|The\s+user|The\s+image|Here\s+is)[^\n]*\n+)+'
+flags = ["IGNORECASE"]
+
+[response.prompt]
+why = '''
+The transcription prompt. It is domain data, not code: it is written in the corpus language, and
+the delimiters it asks for are what ``response.delimited`` reads back.
+'''
+text = '''Transcreva FIELMENTE todo o texto visível em cada página.
+
+Regras:
+- Não resuma, não interprete, não comente. Transcreva.
+- Preserve números, datas, valores e identificadores EXATAMENTE como estão.
+- Trecho ilegível vira [ILEGÍVEL]. Assinatura vira [ASSINATURA].
+- Para CADA página, delimite a saída assim:
+
+=== INICIO DA TRANSCRICAO ===
+(o texto da página)
+=== FIM DA TRANSCRICAO ==='''
+
+# ── routing ─────────────────────────────────────────────────────────────
+
+[routing.amount]
+why = '''
+Currency and percentage marks. Six of them on a page is one of the six weak votes for the table
+route.
+'''
+pattern = 'R\$|%|\bUFIR\b|\bR\s*\$'
+flags = ["IGNORECASE"]
+
+[routing.seal]
+why = '''
+The digital signature seal. On its own it is not enough — it appears on every page of a digital
+case file; what distinguishes the route is the seal WITH a readable body, because then there is
+text to gain from a better step.
+'''
+pattern = 'assinad[oa]\s+digitalmente|c[óo]digo\s+de\s+verifica[çc][ãa]o|liberado\s+nos\s+autos\s+digitais|conferir\s+o\s+original|docdigital|pastadigital|esaj'
+flags = ["IGNORECASE"]
+
+# ── screening ───────────────────────────────────────────────────────────
+
+[screening.traffic_dept]
+why = '''
+``DETRAN - MG`` appears in the BID dataset by sampling (it is mostly from one state).
+Generalised to any state: the card's pattern is the same.
+'''
+pattern = '\bDETRAN\b[ \-]{0,3}[A-Z]{2}\b'
+
+[screening.identity_marks]
+why = '''
+The printed background text of a photocopied identity document, tax card or driving licence. Not
+hand-picked: they come from the BID Dataset (Brazilian Identity Document Dataset, SIBGRAPI
+2020), 28,800 images across 8 classes, from which 9,238 annotated background regions were
+extracted. Of the 62 candidates with 10+ occurrences, only those appearing in ZERO of the 486
+legitimate documents of the validation archive were kept — that filter is what matters, because
+BID says what is PRINTED on the card, not what DISCRIMINATES. It is what dropped ``REGISTRO
+GERAL`` and ``CARTEIRA DE IDENTIDADE`` (4 false positives each). Already normalised: uppercase,
+unaccented, letters and digits only.
+'''
+strings = [
+    'VALIDA EM TODO O TERRITORIO NACIONAL',
+    'LEI NO7 116 DE 29 08 83',
+    'POLEGAR DIREITO',
+    'ASSINATURA DO TITULAR',
+    'ASSINATURA DO DIRETOR',
+    'DATA DE EXPEDICAO',
+    'DOC ORIGEM',
+    'FILIACAO',
+    'NATURALIDADE',
+    'SECRETARIA DA SEGURANCA PUBLICA',
+    'SECRETARIA DE ESTADO DA SEGURANCA PUBLICA',
+    'INSTITUTO DE IDENTIFICACAO RICARDO GUMBLETON DAUNT',
+    'INSTITUTO DE IDENTIFICACAO PEDRO MELLO',
+    'INSTITUTO DE IDENTIFICACAO DO PARANA',
+    'CADASTRO DE PESSOAS FISICAS',
+    'CARTAO DE USO PESSOAL E INTRANSFERIVEL',
+    'DEVE SER APRESENTADO JUNTO COM UM DOCUMENTO DE IDENTIDADE',
+    'NUMERO DE INSCRICAO',
+    'WWW CORREIOS COM BR',
+    'MINISTERIO DAS CIDADES',
+    'CARTEIRA NACIONAL DE HABILITACAO',
+    '1A HABILITACAO',
+    'CAT HAB',
+    'ASSINATURA DO PORTADOR',
+    'ASSINATURA DO EMISSOR',
+    'DOC IDENTIDADE ORG EMISSOR UF',
+    'PROIBIDO PLASTIFICAR',
+    'DATA NASCIMENTO',
+]
+
+[screening.vehicle_marks]
+why = '''
+A vehicle registration certificate — literal and unambiguous. It was VETOED from screening for a
+while, on the argument that it is proof of a seizable asset. The decision went the other way,
+and the reasoning holds: the certificate proves OWNERSHIP of the vehicle, while the fact that
+matters — the seizure — comes from a dedicated system or its own record, not from this
+attachment.
+'''
+strings = [
+    'CERTIFICADO DE REGISTRO DE VEICULO',
+    'CERTIFICADO DE REGISTRO E LICENCIAMENTO',
+]
+
+[screening.personal_attachment_label]
+why = '''
+A description labelling the BATCH of attachments rather than each item — dangerous alone, safe
+combined with short text. It catches the card when the OCR returns only names and codes, with no
+printed label at all; the label ALONE would discard deeds and marriage certificates (6 of the 9
+documents so labelled in the archive).
+'''
+text = 'documentos pessoais'
+
+# ── stamp ───────────────────────────────────────────────────────────────
+
+[stamp.conformity]
+why = '''
+The conformity banner every digital case-file system prints in the margin. It sits in a font
+with an intact encoding, so it SURVIVES even when the body of the page produces nothing: 250 to
+600 characters that sail past any size threshold. It was the dominant pattern in an audit of
+1,339 documents — 227 cases where the extraction looked successful and all there was, was the
+stamp. Measuring an extraction without removing the stamp is measuring the stamp.
+'''
+patterns = [
+    '(?:Este\s+documento\s+[ée]\s+(?:c[oó]pia\s+d[oe]\s+)?original.{0,400}?(?:c[oó]digo|chave)[^\n]{0,80})',
+    '(?:Para\s+conferir\s+o\s+original.{0,200})',
+    '(?:assinado\s+digitalmente\s+por[^\n]{0,120})',
+    '(?:https?://\S*(?:pastadigital|docdigital|esaj)\S*)',
+    '(?:\bfls?\.\s*\d+(?:\s*-\s*\d+)?)',
+    '(?:c[oó]digo\s+de\s+verifica[cç][ãa]o[^\n]{0,60})',
+]

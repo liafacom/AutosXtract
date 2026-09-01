@@ -1,0 +1,101 @@
+name: Feature request
+description: A capability the library does not have — a new engine, a new step, a knob, a format.
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Two things to check first, because they save everyone time
+
+        1. **Has it already been refuted?** The README has a section called
+           *What has been measured and does not work*. A dedicated table
+           model, deduplicating pages, turning Vision's language correction
+           off, a signature detector trained on a public dataset — all of
+           those were tried, measured, and rejected with numbers. If your idea
+           is on that list, the useful proposal is not the idea again, it is
+           a measurement that contradicts the one recorded there.
+
+        2. **Does it need to be in the library at all?** Engines and steps are
+           extension points: `@register` on a subclass of `OCREngine` adds an
+           engine, and any object with `name` and `run(ctx) -> StepResult` is
+           a step. Both work from outside the package. Something that already
+           works as a plugin only belongs in the library if the default
+           cascade should change.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong today, on real documents. Describe the failure, not the solution — the solution is the next field.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+      description: What you want the library to do, and roughly where it would live in the layering (`pdf/`, `quality/`, `engines/`, `steps/`, `cascade.py`).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which layer does it touch
+      description: |
+        The layers do not cross: `pdf/` knows only the file, `quality/` does
+        no I/O, `engines/` does not know what a cascade is, `steps/` composes
+        the two. A proposal that needs an import crossing an arrow backwards
+        usually needs a different shape.
+      options:
+        - engines/ — a new OCR backend or a change to the engine contract
+        - steps/ — a new step, or a change to an existing one
+        - quality/ — gates, vetoes, metrics, routing, thresholds
+        - pdf/ — rendering, profiling, locking, page handling
+        - cascade.py — ordering, the contest, provenance
+        - CLI or public API
+        - packaging, extras, platform markers
+        - something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: extension-point
+    attributes:
+      label: Can it be done today from outside the library?
+      description: Engines register themselves and steps are duck-typed — see "How to add an engine" and "How to add a step" in the README.
+      options:
+        - "No — it needs a change inside the package"
+        - "Yes, but the default cascade should change, which only the library can decide"
+        - "Yes, and I am proposing it be shipped because others will want it too"
+        - "I don't know"
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        Numbers if you have them, on how many documents, measured how. This
+        project fixes defaults by measurement and records the measurement in
+        the comment; a proposal that arrives with one is a proposal that can
+        be accepted. `scripts/compare_engines.py` measures both the engine's
+        own output and the cascade's behaviour, and the difference between
+        those two has already reversed a conclusion here.
+      placeholder: "e.g. across 120 documents from an archive of court filings, X recovered N more anchors than Y, at M s/document"
+
+  - type: textarea
+    id: cost
+    attributes:
+      label: What it would cost
+      description: New dependency and its size, extra latency, extra memory, a model to download. A complete cascade by default is worth a heavier install here, but the trade has to be stated to be judged.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This request contains no real document, extracted text or personal data.
+          required: true

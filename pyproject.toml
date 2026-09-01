@@ -1,0 +1,182 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autosxtract"
+dynamic = ["version"]
+description = "Cascading PDF text extraction — cheapest step first, stopping at the first one that suffices"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "AutosXtract" }]
+maintainers = [{ name = "AutosXtract" }]
+keywords = ["pdf", "ocr", "text-extraction", "apple-vision", "paddleocr", "cascade"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Text Processing",
+]
+# `pip install autosxtract` already assembles the machine's whole cascade, and
+# the cascade is a CHAIN, not a single choice of engine:
+#
+#     macOS            native -> vision -> paddle
+#     Linux/Windows    native ->           paddle
+#
+# PP-OCRv6 is therefore mandatory EVERYWHERE, with no marker. On a Mac it is not
+# a substitute for Vision, it is the step BELOW it: the one that runs when
+# Vision refuses the page, and the second independent reading the agreement gate
+# needs in order to fire at all (one engine can never confirm another). Gating
+# it behind an extra made the Apple cascade silently two steps deep — the failure
+# this arrangement exists to prevent.
+#
+# The cost is deliberate and known: ONNX Runtime is ~200 MB on a Mac that may
+# never call it. A complete cascade by default was judged worth more than a
+# lighter install, because a missing step does not announce itself.
+#
+# Only Vision keeps a marker, because pyobjc simply does not exist off Apple.
+#
+# Two independent layers, and both are necessary:
+#   1. HERE decides what is INSTALLED  (a marker, at pip time)
+#   2. platform.py + engines/base.py decide what is AVAILABLE (at runtime)
+# The second cannot be dispensed with: a macOS box with a broken pyobjc, or an
+# image built for another platform, has to degrade with a warning rather than
+# blow up on the first document.
+dependencies = [
+    "pymupdf>=1.24",
+    "pydantic>=2.0",
+    # Stage 0: files arriving with a .pdf extension that are not PDFs. Pure,
+    # tiny, and without them 128 documents of a real archive are UNREADABLE in
+    # their entirety — no OCR recovers them. Not optional.
+    "striprtf>=0.0.26",
+    "asn1crypto>=1.5",
+    # Imaging: the containment layers crop and enhance the page, and the
+    # preprocessing binarises. They used to RIDE ALONG on rapidocr's dependency
+    # and were therefore missing on macOS, where the engine is Vision — Layer 2
+    # simply did not run, silently. Declaring them is what makes the capability
+    # identical on both platforms.
+    "numpy>=1.24",
+    "pillow>=10.0",
+    "opencv-python-headless>=4.9",
+    # ── step 2, Apple hardware only ──────────────────────────────────────
+    "pyobjc-framework-Vision>=10.0; sys_platform == 'darwin'",
+    # ── step 3 on Apple, step 2 everywhere else — no marker, always ──────
+    "rapidocr>=3.0",
+    "onnxruntime>=1.17",
+]
+
+[project.optional-dependencies]
+# The extras below exist to ASK FOR THE OTHER ENGINE, not the platform's — that
+# one already arrived. They are for whoever wants a safety net or wants to
+# measure one engine against another.
+
+# Vision's safety net: an incomplete pyobjc breaks the direct path, and paying
+# ocrmac's ~61 ms round-trip beats dropping in quality.
+apple = ["ocrmac>=1.0; sys_platform == 'darwin'"]
+# Kept for compatibility: PP-OCRv6 is a mandatory dependency now, on every
+# platform, so this extra installs nothing new. `pip install autosxtract[paddle]`
+# in an existing script keeps working and is simply redundant.
+paddle = ["rapidocr>=3.0", "onnxruntime>=1.17"]
+# Witness for the expensive step's vetoes. Besides the Python package it needs
+# the Tesseract binary on the PATH (apt install tesseract-ocr / brew install
+# tesseract). OpenCV comes in through the degraded-scan recovery track (CLAHE +
+# Otsu), which is what separates "empty page" from "dense but faded page".
+veto = ["pytesseract>=0.3.10"]
+# The full PP-OCR backend: it gives the three official tiers, INT8 and a
+# fine-tuned recogniser. Without it the engine uses rapidocr, which serves the
+# tiny and nothing else.
+paddleocr = ["paddleocr>=3.7"]
+# A second cheap engine of a different architecture — that independence is what
+# makes the consensus gate worth anything.
+onnx = ["onnxtr>=0.6"]
+# REMOTE steps (docling-serve, VLM). Installing turns nothing on: they only
+# exist if somebody instantiates them with a url. See steps/remote.py.
+remote = ["httpx>=0.27"]
+# Docling running INSIDE the process, no service and no network. It weighs
+# ~2 GB of models, which is why it stays out of the default: whoever wants it
+# instantiates it.
+docling = ["docling>=2.0"]
+# Everything that runs on the current platform.
+all = ["autosxtract[apple,paddle,paddleocr,veto,onnx,remote,docling]"]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.6", "mypy>=1.8", "pre-commit>=3.7"]
+
+[project.scripts]
+autosxtract = "autosxtract.cli:main"
+
+# The real repository is liafacom/AutosXtract. These four URLs are not
+# decoration: PyPI renders them as the project's sidebar links, and PyPI's
+# Trusted Publishing matches the publishing workflow against `owner/repo`. A
+# placeholder here sends every user of the package to a repository that does
+# not exist, and the mismatch is only discovered on the release that fails.
+[project.urls]
+Homepage = "https://github.com/liafacom/AutosXtract"
+Documentation = "https://liafacom.github.io/AutosXtract/"
+Repository = "https://github.com/liafacom/AutosXtract"
+Issues = "https://github.com/liafacom/AutosXtract/issues"
+Changelog = "https://github.com/liafacom/AutosXtract/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "autosxtract/_version.py"
+
+# The pattern packs are DATA the library cannot run without, and every rule that
+# could drop them is blunt: ``data/`` in .gitignore already matched them at any
+# depth once, so a fresh clone would have shipped a wheel with no catalogue and
+# failed on the first document. Naming them as artifacts means they are included
+# whatever the ignore rules say.
+[tool.hatch.build]
+artifacts = ["autosxtract/patterns/data/*.toml"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["autosxtract"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["*.md", "docs/", "*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+# RUF001/RUF002: the domain text is Portuguese and the patterns quote
+# accented characters on purpose.
+ignore = ["B008", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.mypy]
+# No fixed ``python_version``: mypy uses the current interpreter. Pinning 3.11
+# made the check die inside numpy's stubs installed under 3.13 ("Type statement
+# is only supported in Python 3.12 and greater") before looking at a single line
+# of our code. The CI matrix already covers 3.11 to 3.13.
+plugins = ["pydantic.mypy"]
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+# The suite is split by WHAT A TEST IS ALLOWED TO TOUCH, not by subject:
+#
+#     tests/unit          one module, no PDF rendering, no engine
+#     tests/integration   several layers at once — cascade, engines, workers
+#     tests/contract      protocol conformance and substitutability
+#     tests/packaging     the repository's own guarantees (metadata, README)
+#
+# ``testpaths`` stays the parent directory so a bare ``pytest`` still runs
+# everything; the slices are addressed by path (``pytest tests/unit``). See
+# tests/README.md for what may and may not go in each.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# ``--strict-markers`` is what makes the markers below real: a typo in
+# ``@pytest.mark.aple`` is an error, not a marker nobody ever selects.
+addopts = "-q --strict-markers"
+markers = [
+    "slow: loads or downloads a real OCR model — seconds, and a network on a cold machine",
+    "apple: can only conclude anything on macOS with Vision; `-m \"not apple\"` deselects it",
+    "paddle: needs the PP-OCRv6 stack really installed, not merely importable",
+]

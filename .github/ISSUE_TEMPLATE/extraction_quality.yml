@@ -1,0 +1,208 @@
+name: Extraction quality — a document came out badly
+description: The library did not crash; it returned text that is empty, garbled, truncated, or worse than another engine would have given.
+title: "[quality] "
+labels: ["quality", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Do not attach the document. Characterise it instead.
+
+        This is the report that matters most to this project and the one that
+        is most dangerous to write, because the natural instinct — "here is
+        the PDF that fails" — publishes a private case file. Issue
+        attachments on GitHub are public and stay reachable by URL after the
+        issue is deleted. **Never** attach the PDF, paste the extracted text,
+        or quote a case number, tax ID, company ID, name or address.
+
+        The good news is that we almost never need the document. Extraction
+        here is a cascade of steps, each with a recorded verdict and reason,
+        so the **provenance string plus the attempt list plus the page
+        profile** usually identify the defect precisely: which step was
+        refused, on which criterion, and what the next one did with it.
+
+        The block below produces exactly that, and prints **no document
+        text** — only counts, reasons and timings. Run it and paste the
+        output.
+
+        ```python
+        from pathlib import Path
+        from autosxtract import Cascade
+        from autosxtract.pdf.profile import profile
+
+        path = "the-document.pdf"          # stays on your machine
+        print(profile(Path(path).read_bytes()))
+
+        r = Cascade().extract_file(path)
+        print(r.provenance)
+        print("winner:", r.step, "score:", r.score, "chars:", len(r.text))
+        for a in r.attempts:
+            print(f"  {a.step:10} accepted={a.accepted} chars={a.chars} {a.ms:.0f}ms  {a.reason}")
+        ```
+
+        If a redacted excerpt is genuinely necessary to show what the text
+        looks like, replace every digit and every proper noun before pasting,
+        and keep it to a line or two. Garbling is visible in structure —
+        `l1ntl0s ()o Autor` — without any real content surviving.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: I have not attached the document, and any excerpt I pasted carries no real identifier, name or address.
+          required: true
+
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What is wrong with the output
+      options:
+        - Empty — zero or nearly zero characters, but the page has content
+        - Garbled — characters come out, but they are not the words on the page
+        - Truncated — part of the document is missing
+        - The cascade stopped too early — an earlier step was accepted and its text is worse
+        - The cascade went too far — an expensive step ran when it should not have
+        - The wrong engine won the contest
+        - Layout lost — reading order, columns, or a table scrambled
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance and attempts
+      description: |
+        The output of the block above. The provenance string is the single
+        most informative line in a quality report: it names the winning step
+        and the refusal reason of every step before it.
+      render: shell
+      placeholder: |
+        PageProfile(pages=12, has_image=True, has_vector=False)
+        paddle: native(quality 0.00 below 0.75) -> paddle(ok)
+        winner: paddle score: 0.65 chars: 18432
+          native     accepted=False chars=0     6ms   quality 0.00 below 0.75
+          paddle     accepted=True  chars=18432 4021ms  ok
+    validations:
+      required: true
+
+  - type: textarea
+    id: profile
+    attributes:
+      label: Page profile and document shape
+      description: |
+        The `PageProfile(...)` line, plus anything you can say about the
+        document that does not identify it: how it was produced (born-digital
+        export, scan, photocopy of a photocopy, photograph of a screen),
+        approximate DPI of the scan, colour or greyscale, whether it is
+        rotated or upside down, whether it carries a conformity stamp, a
+        signature block, tables, handwriting, or a mix of typed and
+        handwritten pages. Which page numbers are the bad ones, if not all.
+      placeholder: "PageProfile(pages=12, has_image=True, has_vector=False) — scanned at ~200 DPI, greyscale, pages 4-6 are a photocopy of a photocopy, page 9 has a table"
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: Output of `autosxtract diagnose`
+      description: |
+        Paste it whole. It shows which engines this machine actually has and
+        why each absent one is absent — and a missing engine is the single
+        commonest cause of a bad extraction. It also reports whether the
+        winning engine exposes line geometry: without it the containment
+        layers do not run at all, which by itself moves entity recall from
+        0.921 back to 0.902.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Which engine produced the bad text
+      description: The winning step in the provenance string. `native` means the PDF's own text layer, no OCR involved.
+      options:
+        - native (the PDF text layer)
+        - vision (Apple Vision)
+        - ocrmac (Apple Vision through ocrmac)
+        - paddle (PP-OCRv6 through rapidocr or paddleocr)
+        - onnx (onnxtr)
+        - tesseract
+        - a remote step (DoclingStep or VLMStep, instantiated by me)
+        - docling running locally (LocalDoclingStep)
+        - an engine of my own
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: |
+        Say the OS and the architecture, and whether it is Apple hardware —
+        the cascade is not the same shape on the two: macOS runs
+        native → vision → paddle, everywhere else native → paddle.
+      placeholder: "macOS 14.5, arm64 (M2) / Ubuntu 24.04, x86_64, inside a container"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: autosxtract version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.11.9"
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: |
+        The `Config(...)` or the CLI flags you used. State any threshold you
+        changed from the default: every one of them was fixed by a
+        measurement, and an override moves where the cascade stops.
+      render: python
+      placeholder: |
+        Config(dpi=150, engines=["paddle"], layers=True)
+
+  - type: textarea
+    id: comparison
+    attributes:
+      label: Does another engine read it correctly?
+      description: |
+        `autosxtract extract doc.pdf --engines vision` versus `--engines
+        paddle` — with the character counts, not the text. If one engine
+        reads it and another does not, that is the strongest possible signal,
+        and it usually means either a routing decision or a gate threshold,
+        not the engine itself. `scripts/compare_engines.py` runs this
+        comparison across a folder and reports both the engine's own output
+        and the cascade's behaviour, which is the pair that decides.
+      render: shell
+
+  - type: textarea
+    id: reproducible
+    attributes:
+      label: Can it be reproduced synthetically?
+      description: |
+        The most valuable thing you can attach: a script that builds a PDF
+        with PyMuPDF and invented text that shows the same failure. See
+        `tests/conftest.py`. A synthetic reproduction can enter the suite as a
+        regression test; a private document can never.
+      render: python
+
+  - type: textarea
+    id: scale
+    attributes:
+      label: How many documents does this affect
+      description: One file, or a systematic pattern across an archive? A number here decides whether this is a bug or a threshold, and roughly how much a fix is worth.

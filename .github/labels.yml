@@ -1,0 +1,102 @@
+# The label set, kept in the repository so it is reviewable and reproducible
+# rather than living only in a settings page nobody can diff.
+#
+# Apply it with the gh CLI (create, or update if it already exists):
+#
+#   .venv/bin/python - <<'PY' | bash
+#   import yaml
+#   for l in yaml.safe_load(open(".github/labels.yml")):
+#       print(f'gh label create {l["name"]!r} --color {l["color"]} '
+#             f'--description {l["description"]!r} --force')
+#   PY
+#
+# `--force` makes it idempotent: running it again reconciles colours and
+# descriptions instead of failing on the labels that already exist.
+#
+# Deliberately small. A taxonomy nobody can hold in their head gets used
+# inconsistently, and an inconsistently applied label is worse than none —
+# it makes a search look exhaustive when it is not.
+
+# ── what kind of thing it is ────────────────────────────────────────────
+- name: bug
+  color: d73a4a
+  description: The library does something it should not, or raises where it should degrade.
+
+- name: quality
+  color: b60205
+  description: The extraction ran and the text came out bad. The domain-specific report — provenance, engines, page profile.
+
+- name: enhancement
+  color: a2eeef
+  description: A capability the library does not have.
+
+- name: documentation
+  color: 0075ca
+  description: README, docs/, notebooks, docstrings, CLI help.
+
+- name: dependencies
+  color: 0366d6
+  description: Dependency updates, mostly opened by Dependabot.
+
+- name: ci
+  color: 5319e7
+  description: Workflows, runners, the release path.
+
+# ── where it lives ──────────────────────────────────────────────────────
+- name: "area: engines"
+  color: fbca04
+  description: OCR backends and the engine contract.
+
+- name: "area: cascade"
+  color: fbca04
+  description: Orchestration, step order, the contest between candidates, provenance.
+
+- name: "area: quality"
+  color: fbca04
+  description: Gates, vetoes, metrics, routing, thresholds.
+
+- name: "area: pdf"
+  color: fbca04
+  description: Rendering, profiling, the PyMuPDF lock, page handling.
+
+- name: "area: packaging"
+  color: fbca04
+  description: Extras, platform markers, the wheel, the release.
+
+- name: "platform: apple"
+  color: c5def5
+  description: Only reproducible on macOS, or specific to Vision.
+
+# The label `.github/release.yml` keys its first release-notes category on. It
+# has to exist before it can be applied, and a category keyed on a label nobody
+# can apply is silently empty — the one heading a reader of a major release is
+# most entitled to see, missing, with nothing to indicate it was ever meant to
+# be there.
+- name: breaking-change
+  color: b60205
+  description: Removes or changes public behaviour a caller depends on. Requires a major bump.
+
+# ── how it is handled ───────────────────────────────────────────────────
+- name: needs-triage
+  color: ededed
+  description: Nobody has looked at it yet. Every new issue starts here.
+
+- name: needs-measurement
+  color: e99695
+  description: The proposal changes a number and no measurement backs it. Blocked until one exists.
+
+- name: needs-repro
+  color: e99695
+  description: Waiting for a synthetic reproduction. Never for the real document.
+
+- name: privacy
+  color: b60205
+  description: Touches the scanner, the ignore rules, or the handling of real data. Read line by line.
+
+- name: already-refuted
+  color: cfd3d7
+  description: Measured and rejected before — see "What has been measured and does not work" in the README. Reopen only with a contradicting measurement.
+
+- name: good first issue
+  color: 7057ff
+  description: Self-contained, with the expected outcome already written down.

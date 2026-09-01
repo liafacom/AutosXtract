@@ -1,0 +1,100 @@
+{
+  "name": "main - protected",
+  "target": "branch",
+  "source_type": "Repository",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_linear_history"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "require_code_owner_review": true,
+        "dismiss_stale_reviews_on_push": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": [
+          "squash",
+          "rebase"
+        ]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": true,
+        "required_status_checks": [
+          {
+            "context": "privacy"
+          },
+          {
+            "context": "history-scan"
+          },
+          {
+            "context": "quality (3.11)"
+          },
+          {
+            "context": "quality (3.12)"
+          },
+          {
+            "context": "quality (3.13)"
+          },
+          {
+            "context": "with-ocr"
+          },
+          {
+            "context": "apple"
+          },
+          {
+            "context": "pinned"
+          },
+          {
+            "context": "bootstrap (ubuntu-latest)"
+          },
+          {
+            "context": "bootstrap (macos-latest)"
+          },
+          {
+            "context": "packaging"
+          },
+          {
+            "context": "docs"
+          },
+          {
+            "context": "CodeQL (python)"
+          },
+          {
+            "context": "dependency-review"
+          },
+          {
+            "context": "pr-hygiene"
+          }
+        ]
+      }
+    }
+  ],
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ]
+}

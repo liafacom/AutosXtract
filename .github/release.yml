@@ -1,0 +1,97 @@
+# How GitHub writes the notes for a release, when the release is created with
+# `--generate-notes` (RELEASING.md, step 6) or with "Generate release notes" in
+# the web UI.
+#
+# ── What this file actually controls ─────────────────────────────────────
+# GitHub groups the pull requests merged since the previous release into the
+# categories below, keyed on the LABELS those pull requests carry. It does not
+# read commit messages and it does not read CHANGELOG.md. The two therefore say
+# different things on purpose:
+#
+#   CHANGELOG.md        written by a human, says what changed and WHY, and
+#                       carries the measurement behind every changed number.
+#   generated notes     mechanical, exhaustive, links every pull request and
+#                       credits every author. Nobody forgets to update it.
+#
+# The release body ends up with the changelog section first and the generated
+# list under it. Neither replaces the other: the first is the reason, the
+# second is the receipt.
+#
+# ── Why the order below is not arbitrary ─────────────────────────────────
+# A pull request lands in the FIRST category whose labels it matches, and never
+# in a second one. So the order encodes what a reader should see first when a
+# pull request is labelled twice — and they usually are, because `quality` and
+# `enhancement` travel together.
+#
+# `quality` therefore comes before everything: it is the label for "the
+# extraction ran and the text came out bad", which is the failure this library
+# exists to prevent. A quality fix filed under "Added" because the pull request
+# also added a knob is a quality fix nobody reads.
+#
+# ── Alignment with .github/labels.yml ────────────────────────────────────
+# Every label named here except `breaking-change` exists in .github/labels.yml.
+# A category keyed on a label nobody applies is silently empty, so this file is
+# only as good as the labelling discipline — the issue forms and Dependabot
+# apply theirs automatically, and the rest is on the reviewer who merges.
+changelog:
+  # No `exclude:` block, deliberately. Only pull requests MERGED into the range
+  # appear at all, so the triage labels (`needs-triage`, `needs-repro`,
+  # `needs-measurement`, `already-refuted`) can never show up here and
+  # excluding them would be decoration. Excluding `dependabot` as an author
+  # would be worse than decoration: it would empty the Dependencies category
+  # below, and a release that silently moved a pinned dependency is exactly the
+  # thing a reader of the notes is entitled to see.
+  categories:
+    # Not in labels.yml yet — see RELEASING.md. Harmless while it does not
+    # exist (the category simply stays empty), and the day a major version is
+    # cut it is the first thing a reader has to be shown, so the slot is held
+    # open rather than invented under pressure.
+    - title: 💥 Breaking changes
+      labels:
+        - breaking-change
+
+    # The signature category. See the ordering note above.
+    - title: 🩹 Extraction quality
+      labels:
+        - quality
+
+    - title: 🐛 Fixed
+      labels:
+        - bug
+
+    - title: ✨ Added
+      labels:
+        - enhancement
+
+    # Privacy sits on its own rather than under "Fixed" because the question a
+    # reader has is not "was there a bug" but "did anything change about what
+    # this library can leak". That deserves its own heading even when it holds
+    # one line.
+    - title: 🔐 Privacy and security
+      labels:
+        - privacy
+
+    - title: 📖 Documentation
+      labels:
+        - documentation
+
+    # The release path itself. `area: packaging` belongs here rather than under
+    # Added because a changed extra or a changed platform marker changes what
+    # `pip install autosxtract` puts on a user's machine — an install-time
+    # effect, not a feature.
+    - title: 🏗 CI, packaging and the release path
+      labels:
+        - ci
+        - "area: packaging"
+
+    - title: 📦 Dependencies
+      labels:
+        - dependencies
+
+    # The catch-all must be last: '*' matches everything, so any category after
+    # it would be permanently empty. Its presence is what guarantees the notes
+    # are exhaustive — a pull request merged with no label still appears, and
+    # showing up under a vague heading is what makes the missing label visible.
+    - title: 🧹 Everything else
+      labels:
+        - "*"

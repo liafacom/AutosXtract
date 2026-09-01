@@ -1,0 +1,44 @@
+{
+  "name": "release tags - immutable",
+  "target": "tag",
+  "source_type": "Repository",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/tags/v*"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "update",
+      "parameters": {
+        "update_allows_fetch_and_merge": false
+      }
+    },
+    {
+      "type": "tag_name_pattern",
+      "parameters": {
+        "name": "v<major>.<minor>.<patch> and nothing else",
+        "negate": false,
+        "operator": "regex",
+        "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)((a|b|rc)(0|[1-9][0-9]*))?(\\.post(0|[1-9][0-9]*))?$"
+      }
+    }
+  ],
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "always"
+    }
+  ]
+}

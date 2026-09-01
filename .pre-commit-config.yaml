@@ -1,0 +1,84 @@
+# Install with `make setup` (which does it for you) or `make hooks`.
+#
+# Order matters: the privacy scan runs FIRST, because it is the only one that
+# prevents a leak — the others only prevent a red CI. A commit blocked on
+# formatting costs thirty seconds; a real document published has no undo.
+#
+# Every rev below is pinned. An unpinned hook is a second, invisible dependency
+# set: `pre-commit autoupdate` is a deliberate act, and a hook that upgrades
+# itself between two developers' machines reintroduces exactly the "works here"
+# problem constraints/dev.txt exists to remove.
+repos:
+  - repo: local
+    hooks:
+      # The scanner runs on the INDEX (`--staged`), not the working tree.
+      # pre-commit stashes unstaged changes before running, so fixing a file
+      # without `git add` leaves this hook reading the old version.
+      #
+      # `python3` and not the venv's interpreter on purpose: the scanner imports
+      # nothing outside the standard library and parses on Python 3.8 upwards, so
+      # it keeps working in a clone with no venv, in a container, mid-rebase. A
+      # leak guard that depends on a healthy environment stops guarding at the
+      # exact moment the environment is unhealthy.
+      - id: privacy-check
+        name: privacy scan (staged)
+        entry: python3 scripts/privacy_check.py . --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Same tool and same version as CI resolves through constraints/dev.txt
+  # (ruff==0.16.5). Two places, and they must be bumped together — `make lock`
+  # after upgrading ruff, then this rev. If they drift, the tree is formatted by
+  # one ruff and judged by another, which is the failure this hook exists to
+  # prevent.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      # CI runs `ruff check` with no --fix; here it fixes and fails the commit,
+      # which is the same verdict with the work already done.
+      - id: ruff-check
+        args: [--fix]
+      # Without this hook, `ruff check` passes and CI fails on `ruff format
+      # --check`. They are different checks: the first looks at lint rules, the
+      # second at formatting.
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Blocks any file above 1 MB. It is the net that catches the archive PDF
+      # that slipped past .gitignore — right extension, wrong directory.
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: check-toml
+      # Strict everywhere, because a malformed workflow is a guardrail that
+      # silently never runs.
+      - id: check-yaml
+        exclude: ^mkdocs\.yml$
+      # mkdocs.yml is the one exception, and it needs its own pass. Material
+      # registers the Mermaid fence with `!!python/name:`, a tag the safe
+      # loader has no constructor for — the file is valid, the loader is
+      # strict. `--unsafe` checks syntax only, so scoping it to this single
+      # file keeps the strict parse for everything else.
+      - id: check-yaml
+        name: check yaml (mkdocs, syntax only)
+        files: ^mkdocs\.yml$
+        args: ["--unsafe"]
+      # .devcontainer/devcontainer.json is JSONC — the format allows the
+      # comments that explain WHY the container cannot have Apple Vision, and
+      # this hook would reject them. Excluding it is cheaper than deleting the
+      # explanation.
+      - id: check-json
+        exclude: ^\.devcontainer/devcontainer\.json$
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      # Stops a private file entering through a symlink pointing outside the
+      # repository.
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      # scripts/ is the entry point for a newcomer: a bootstrap that is not
+      # executable turns "one command" into a puzzle.
+      - id: check-shebang-scripts-are-executable

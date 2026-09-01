@@ -1,0 +1,311 @@
+# AutosXtract pattern catalogue — the neutral pack.
+#
+# Nothing here describes a particular language: control bytes, glyph-index runs,
+# digit runs, markdown structure, homoglyph confusions. It is the floor every
+# resolution starts from, and a locale pack is layered on top of it entry by
+# entry.
+#
+# Each entry carries the measurement that fixed it in ``why``. That text is the
+# entry's reason to exist — it travelled here from the code with the pattern,
+# and a pattern whose ``why`` no longer holds is a pattern to delete, not to
+# adjust silently.
+#
+# Entry shapes, one key per entry decides which:
+#     pattern      a regex, optionally with ``flags`` and a literal ``replacement``
+#     patterns     a list of regexes kept separate (the code needs them one by one)
+#     strings      literal strings, never compiled
+#     words        a whitespace-separated block, read as a set
+#     map          a character-for-character substitution table
+#     text         a plain string
+
+# ── anchors ─────────────────────────────────────────────────────────────
+
+[anchors.digit_run]
+why = '''
+A long run of digits: protocol, registration number, deed number, barcode. Five is the floor —
+below that you catch years, folio numbers and small amounts, whose formatting legitimately
+varies between steps.
+'''
+pattern = '\d{5,}'
+
+[anchors.punctuated]
+why = '''
+A punctuated identifier: groups of digits separated by dot, slash or hyphen. Deliberately
+generic rather than one regex per format — a real archive holds tax IDs, case numbers, deed
+numbers and legacy formats (``001.06.012345-6``, groups of 3/2/6/1), and enumerating formats
+misses precisely what has not been seen yet. The filter is the digit count, which lives in the
+code as a threshold.
+'''
+pattern = '\d+(?:[./-]\d+){2,}'
+
+[anchors.alphanumeric]
+why = '''
+An alphanumeric identifier: VIN, tracking code, access key. Requires a long body and a mix of
+letters and digits, so it does not capture ordinary words. Without it the VIN
+``9XXYZ32E41A099887`` was not an anchor — the digit regex only saw the ``099887`` suffix, which
+survives the ``32E``->``3ZE`` corruption. The digit lookahead uses ``[A-Z]*`` rather than
+``[^0-9]*``: with the negated class it ran past the end of the token and looked for digits in
+the rest of the sentence, turning ``PROCESSO`` and ``PROTOCOLO`` into anchors.
+'''
+pattern = '\b(?=[A-Z0-9]*[A-Z])(?=(?:[A-Z]*[0-9]){4,})[A-Z0-9]{8,}\b'
+
+[anchors.non_digit]
+why = '''
+What is deleted to reduce a punctuated identifier to its digits, so that ``001.06.012345-6`` and
+``001-06-012345/6`` are the same anchor: swapping the separator between steps is not a loss,
+only a digit difference is.
+'''
+pattern = '\D'
+
+# ── metrics ─────────────────────────────────────────────────────────────
+
+[metrics.glyph_index]
+why = '''
+A font with no ``ToUnicode`` table makes the extractor return the glyph index instead of the
+character (``g40g86g87g72``). It is alphanumeric, carries no odd symbols, and the word counter's
+``\w+`` treats the whole run as a single word. Measured: 1,171 characters of junk scoring 0.85.
+'''
+pattern = '(?:g\d{1,4}){4,}'
+
+[metrics.control_chars]
+why = 'Broken encoding, not content. C0 and C1 minus tab, newline and carriage return.'
+pattern = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]'
+
+[metrics.word]
+why = '''
+Tokenisation for the single-character-word ratio. Unicode-aware on purpose: with the ASCII
+definition an accented word splits in two and a clean page scores like junk.
+'''
+pattern = '\b\w+\b'
+flags = ["UNICODE"]
+
+[metrics.alphabetic_word]
+why = '''
+What counts as a word for the function-word ratio: alphabetic tokens of two or more characters,
+so numbers, codes and form abbreviations stay out of both the numerator and the denominator.
+'''
+pattern = '[A-Za-zÀ-ÿ]{2,}'
+
+[metrics.horizontal_space]
+why = 'Runs of spaces and tabs collapse to one — layout, not content.'
+pattern = '[ \t]+'
+
+[metrics.blank_lines]
+why = 'Three or more line breaks are page layout; two are a paragraph boundary.'
+pattern = '\n{3,}'
+
+[metrics.character_fixes]
+why = '''
+The non-breaking space reads as a character and not as a separator, so a whole page of them
+counts as one enormous word; the soft hyphen is invisible and splits words for every consumer
+downstream. Both are extractor artefacts, never content.
+'''
+
+[metrics.character_fixes.map]
+"\u00A0" = " "
+"\u00AD" = ""
+
+# ── markers ─────────────────────────────────────────────────────────────
+
+[markers.whitespace]
+why = '''
+Collapses what is left after the unread-passage markers are cut out, so the remaining content is
+measured and not the holes between the markers.
+'''
+pattern = '\s+'
+
+# ── lexicon ─────────────────────────────────────────────────────────────
+
+[lexicon.token]
+why = '''
+What the lexicon counts as a word. Three characters is the floor because function words of one
+or two letters live in ``lexicon.short_words`` — the tokeniser would otherwise flood coverage
+with particles and every line would look known.
+'''
+pattern = '[a-zà-ÿ]{3,}'
+flags = ["IGNORECASE"]
+
+# ── lines ───────────────────────────────────────────────────────────────
+
+[lines.token]
+why = '''
+The tokeniser the scribble test counts with. Identical to ``lexicon.token`` today and kept
+separate on purpose: one asks 'is this line the corpus language?', the other 'how many words did
+the recogniser produce out of this ink?'.
+'''
+pattern = '[a-zà-ÿ]{3,}'
+flags = ["IGNORECASE"]
+
+[lines.junk]
+why = '''
+Characters outside what a document prints. The ratio of these to the line's length is what
+separates ink read as symbols from text with awkward punctuation.
+'''
+pattern = '[^\w\s.,;:!?()/%$°ºª\-]'
+
+[lines.caps_title]
+why = '''
+A heading in capitals. Structural text, never junk: a short all-caps line is a title, and the
+coverage of a title against a lexicon of running prose is meaningless.
+'''
+pattern = '^[A-ZÀ-Þ0-9ºª.\s/\-]+$'
+
+[lines.foreign_scripts]
+why = '''
+Scripts a Latin-alphabet OCR should never produce — CJK, kana, Hangul. The character goes and
+the line STAYS: discarding the line over them would take the Latin text with it. A corpus
+actually written in one of these scripts must empty this entry.
+'''
+pattern = '[　-〿぀-ヿ㄀-ㄯ㄰-㆏㐀-䶿一-鿿가-힯豈-﫿]'
+
+[lines.run_together]
+why = '''
+The runs Layer 1b tries to re-segment. Fourteen letters is the floor: below it the longest
+legitimate words of the corpus start to appear, and splitting one of those corrupts correct
+text.
+'''
+pattern = '[A-Za-zÀ-ÿ]{14,}'
+
+# ── prose ───────────────────────────────────────────────────────────────
+
+[prose.sentence_end]
+why = 'End of sentence: after this the line break is legitimate and must be kept.'
+pattern = '''[.:;!?»\"']\s*$'''
+
+[prose.structure]
+why = '''
+Markdown structure that must NEVER be merged — tables and headings arrive like this, and joining
+the lines would destroy the table.
+'''
+pattern = '^\s*(?:#{1,6}\s|\||[-*+]\s|\d+[.)]\s|>\s|```)'
+
+[prose.title]
+why = '''
+A line that is a title or heading and must stay on its own even when the previous one did not
+close a sentence: all caps (with 2+ words, so a mid-text acronym is not caught), or a field
+label ending in a colon.
+'''
+pattern = '^(?:[A-ZÀ-Þ0-9][A-ZÀ-Þ0-9\s.ºª°/-]{6,}$|[A-ZÀ-Þ][\w\s]{2,30}:\s*$)'
+
+[prose.line_break_hyphen]
+why = '''
+A word split at the end of a line (``consti-\ntuição``). Whether the hyphen goes or stays is
+decided in the code, against ``prose.enclitic``.
+'''
+pattern = '(\w)-\s*$'
+
+[prose.split_number]
+why = '''
+A number split at the end of a line (``100000/13-\n99``, ``0001234-\n56.2020``). These are
+exactly the tokens downstream extraction looks for, so the two halves are glued with no space.
+'''
+pattern = '\d[-/]\s*$'
+
+[prose.homoglyphs]
+why = '''
+Homoglyphs from other alphabets that the OCR injects mid-word. A closed map, restricted to
+characters outside the Latin repertoire of the corpus, so the risk of corrupting legitimate text
+is nil.
+'''
+
+[prose.homoglyphs.map]
+"А" = "A"
+"В" = "B"
+"Е" = "E"
+"К" = "K"
+"М" = "M"
+"Н" = "H"
+"О" = "O"
+"Р" = "P"
+"С" = "C"
+"Т" = "T"
+"У" = "Y"
+"Х" = "X"
+"а" = "a"
+"е" = "e"
+"о" = "o"
+"р" = "p"
+"с" = "c"
+"у" = "y"
+"х" = "x"
+"İ" = "I"
+"ı" = "i"
+"ă" = "a"
+"Ă" = "A"
+"ș" = "s"
+"ț" = "t"
+
+[prose.whitespace]
+why = '''
+Normalises a stamp line before de-duplicating it: the same banner comes back off every page with
+different spacing, and without this the footer repeats verbatim.
+'''
+pattern = '\s+'
+
+[prose.horizontal_space]
+why = '''Two or more spaces are the OCR's column alignment, not content.'''
+pattern = '[ \t]{2,}'
+
+[prose.blank_lines]
+why = 'Three or more line breaks are page layout; two are a paragraph boundary.'
+pattern = '\n{3,}'
+
+# ── response ────────────────────────────────────────────────────────────
+
+[response.after_think]
+why = '''
+Fallback 1: a model that ignored the delimiter but closed its reasoning block. Only what comes
+after is kept.
+'''
+pattern = '^.*?</think>\s*'
+flags = ["IGNORECASE", "DOTALL"]
+
+[response.md_fence]
+why = '''
+The markdown fence a model wraps its answer in. It is not part of the transcription and would
+otherwise reach the corpus as content.
+'''
+pattern = '^\s*```[a-zA-Z]*\s*\n|\n\s*```\s*$'
+
+# ── routing ─────────────────────────────────────────────────────────────
+
+[routing.digit]
+why = 'Counts digits per line: a table is dense in them, prose is not.'
+pattern = '\d'
+
+[routing.rule]
+why = '''
+A horizontal rule or a cell border, drawn with characters. Three of them on a page is one of the
+six weak votes for the table route.
+'''
+pattern = '[.\-_·—]{4,}|[+|]{2,}|-\s-\s-|\|.*\|'
+
+# ── screening ───────────────────────────────────────────────────────────
+
+[screening.non_alphanumeric]
+why = '''
+A photocopied card comes out of OCR with unstable accents and punctuation (``VÁLIDA EMTODO
+OTERRITÓRIO``, ``LEIN°7 116 DE 29/0E``), so comparing an accented or punctuated form is useless.
+This is the same normalisation applied to the BID transcriptions when the markers were derived.
+'''
+pattern = '[^A-Za-z0-9 ]'
+
+[screening.whitespace]
+why = 'Collapses the gaps the punctuation left, so a mark matches as one phrase.'
+pattern = '\s+'
+
+# ── stamp ───────────────────────────────────────────────────────────────
+
+[stamp.word]
+why = '''
+The single source of tokenisation. Whoever COUNTS useful words and whoever COMPARES two readings
+must agree on what a word is, otherwise the two gates that depend on it diverge silently.
+'''
+pattern = '[A-Za-zÀ-ÿ]{2,}'
+
+[stamp.whitespace]
+why = '''
+The hole the stamp leaves behind. Without collapsing it, a page that was nothing but banner
+still measures hundreds of characters of whitespace.
+'''
+pattern = '\s{2,}'

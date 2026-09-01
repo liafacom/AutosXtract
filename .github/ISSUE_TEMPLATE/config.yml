@@ -1,0 +1,32 @@
+# Blank issues are off on purpose. Not to make reporting harder — to make the
+# first reply useful. A quality report without the provenance string and the
+# `diagnose` output cannot be triaged at all, and asking for them afterwards
+# costs a round trip measured in days.
+blank_issues_enabled: false
+#
+# ── Both of these links 404 until an admin turns something on ────────────
+# The advisory link resolves only when PRIVATE VULNERABILITY REPORTING is
+# enabled, and the Discussions link only when Discussions is. Until then the
+# link a reporter is offered for "a real document leaked into this repository"
+# is a dead end, and the predictable fallback is a PUBLIC issue pointing at the
+# file — which multiplies the exposure this template exists to prevent.
+#
+# Turn both on once, and verify by opening the URLs while signed out:
+#
+#     Settings -> Advanced Security -> Private vulnerability reporting -> Enable
+#     Settings -> General -> Features -> [x] Discussions
+#
+# or in one gesture, with everything else:  scripts/github_guardrails_setup.sh
+contact_links:
+  - name: Question, idea, or "is this supposed to work like that?"
+    url: https://github.com/liafacom/AutosXtract/discussions
+    about: Open-ended conversation belongs in Discussions. If it turns out to be a defect, we will open the issue from there with the details already gathered.
+  - name: Security vulnerability or a privacy leak
+    url: https://github.com/liafacom/AutosXtract/security/advisories/new
+    about: Never in a public issue. Report privately through GitHub Security Advisories — see SECURITY.md. That includes anything you notice leaking personal data out of a document.
+  - name: A real document leaked into this repository
+    url: https://github.com/liafacom/AutosXtract/security/advisories/new
+    about: If you find a real PDF, a real extracted text, a case number or a personal identifier committed here, report it privately. A public issue pointing at it multiplies the exposure.
+  - name: How to contribute
+    url: https://github.com/liafacom/AutosXtract/blob/main/CONTRIBUTING.md
+    about: Environment setup, the layering, how to add an engine or a step, the test markers, and what a pull request has to carry to be merged.

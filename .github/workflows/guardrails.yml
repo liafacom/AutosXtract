@@ -1,0 +1,251 @@
+name: Guardrails
+
+# The checks a ruleset cannot express.
+#
+# A ruleset can demand "a check called X must be green". It cannot look inside a
+# diff, read a commit message, or know what a dependency's licence is. Those are
+# the three things this workflow does, and each of them blocks a class of change
+# that CI proper would let through:
+#
+#   dependency-review  a new dependency with a known vulnerability, or a licence
+#                      the library cannot ship under
+#   history-scan       an identifier or a credential in a commit message, or in a
+#                      line that was added and then removed inside the same
+#                      branch — neither of which the tree scan can see
+#   pr-hygiene         a title that becomes a useless commit message the moment
+#                      the pull request is squashed
+#
+# `edited` is in the trigger list on purpose. Without it, a contributor who fixes
+# a rejected title sees the check stay red forever, because retitling a pull
+# request does not produce a new commit and therefore does not re-run anything.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+# Least privilege, as everywhere else here. No job in this file writes to the
+# repository, comments on the pull request or uploads anything.
+permissions:
+  contents: read
+
+concurrency:
+  group: guardrails-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # ── the supply chain ─────────────────────────────────────────────────────
+  # This library renders and parses untrusted PDFs through a stack of C
+  # extensions — PyMuPDF, ONNX Runtime, OpenCV. A vulnerable version of any of
+  # them is not an abstract risk: it is remote code execution reachable from a
+  # file somebody was asked to extract.
+  #
+  # Dependabot already opens a weekly pull request for updates. This is the other
+  # direction: it refuses a pull request that INTRODUCES a dependency already
+  # known to be vulnerable, at the moment it is proposed, instead of waiting for
+  # an alert afterwards.
+  #
+  # Free on public repositories once the dependency graph is on. On a private
+  # repository the action fails unless GitHub Code Security is purchased — see
+  # `.github/GUARDRAILS.md` for what to run instead.
+  dependency-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Review what this pull request adds to the dependency graph
+        uses: actions/dependency-review-action@v5
+        with:
+          # `moderate`, not the default `low`. The default fails on advisories
+          # that a transitive test-only package will always have some of, and a
+          # gate that is red for reasons nobody can act on is a gate that gets
+          # switched off. Anything at moderate or above is a real conversation.
+          fail-on-severity: moderate
+          # An allow list, not a deny list: a licence that is not on the list is
+          # refused, so a NEW one has to be looked at rather than slipping
+          # through because nobody thought to ban it in advance. This package is
+          # MIT, and a strong-copyleft runtime dependency would make the wheel
+          # undistributable under the licence its own metadata claims — a legal
+          # defect that users discover, not us.
+          #
+          # GPL and AGPL are absent from this list, and that is the point.
+          # Adding one is a deliberate decision with a licence consequence, and
+          # it is a diff in a file `.github/CODEOWNERS` protects.
+          allow-licenses: >-
+            MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause,
+            BSD-3-Clause-Clear, ISC, Python-2.0, PSF-2.0, 0BSD, Unlicense,
+            CC0-1.0, MPL-2.0, Zlib, HPND, LGPL-2.1-or-later, LGPL-3.0-or-later
+          # ── one named exemption, and it is a real open question ───────────
+          # PyMuPDF is AGPL-3.0-or-later (or a paid commercial licence), and it
+          # is a MANDATORY dependency here — not an extra. Without this line
+          # every Dependabot bump of it would be refused by the rule above, the
+          # weekly dependency pull request would sit permanently red, and the
+          # first thing anyone did would be to delete the licence check.
+          #
+          # The exemption is written here rather than by widening the allow
+          # list, so that it names ONE package instead of blessing AGPL in
+          # general, and so that whoever reads this file sees the question
+          # rather than inheriting an answer. The question is real and is NOT
+          # settled by this workflow: a wheel whose metadata says MIT while a
+          # required dependency is AGPL is a licence claim the maintainers have
+          # to make deliberately. See `.github/GUARDRAILS.md`, "The licence
+          # question this cannot answer".
+          allow-dependencies-licenses: >-
+            pkg:pypi/pymupdf
+
+  # ── the leak the tree scan cannot see ────────────────────────────────────
+  # `scripts/privacy_check.py` is the only check in this project that prevents a
+  # leak rather than merely a red build (CLAUDE.md section 9), and it scans the
+  # tree as it stands. Two things escape that, and both end up published:
+  #
+  #   1. COMMIT MESSAGES. `git log` is part of what a clone carries, and a case
+  #      number typed into a commit subject is as public as one in a file. The
+  #      pull-request template already says "including in comments, docstrings
+  #      and commit messages"; nothing enforced the last third until now.
+  #   2. A LINE ADDED AND THEN REMOVED inside the same branch. The tree at HEAD
+  #      is clean, the tree scan passes, and the credential is still in the
+  #      history that gets merged.
+  #
+  # Both are scanned with the project's own scanner, on purpose: it validates
+  # Brazilian tax IDs, company IDs and case numbers by their CHECK DIGIT, so it
+  # stays quiet on the deliberately invalid examples this repository uses and
+  # loud on a real one. A generic secret scanner cannot make that distinction.
+  history-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Full history: `base..head` needs both ends present, and the default
+      # shallow clone has neither.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Everything below writes into RUNNER_TEMP and never into the workspace, so
+      # the extracted text cannot be picked up by another job or an artefact
+      # upload.
+      - name: Collect what this branch adds
+        env:
+          # Interpolating `github.event.*` directly into a `run:` block is how a
+          # pull request title becomes shell. Every untrusted value in this file
+          # arrives through the environment, where it is data.
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          scan="$RUNNER_TEMP/history-scan"
+          mkdir -p "$scan"
+
+          # Every collection below ends in `|| true`, because `grep` exits 1 when
+          # it filters everything out and that is a normal result. The cost of
+          # that is a gate that would pass silently if `git log` itself failed
+          # and produced nothing — the worst failure mode a leak check can have,
+          # since a green tick would mean "nothing was looked at". So the range
+          # is resolved first, and an empty one is an error rather than a pass.
+          count=$(git rev-list --count "$BASE..$HEAD")
+          echo "$count commit(s) in $BASE..$HEAD"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No commits between the base and the head of this pull request. Nothing was scanned, so nothing can be vouched for."
+            exit 1
+          fi
+
+          # Subject and body only. NOT `%ae`: an author e-mail is legitimately
+          # in every commit and is already public on the commit itself, so
+          # scanning it would fail every pull request ever opened. Trailers are
+          # stripped for the same reason — `Co-authored-by:` carries an address
+          # by design.
+          git log --no-merges --format='%H%n%s%n%b%n' "$BASE..$HEAD" \
+            | grep -viE '^(co-authored-by|signed-off-by|reported-by|reviewed-by|tested-by|acked-by|suggested-by|helped-by|cc):' \
+            > "$scan/commit-messages.txt" || true
+
+          # `git log -p`, NOT `git diff BASE...HEAD`. The difference is the
+          # whole point of this step: a diff shows the NET change, so a
+          # credential added in one commit and deleted in the next cancels out
+          # and the diff is empty — while the credential is still sitting in the
+          # history that the merge publishes. Walking the patches sees every
+          # line the branch ever added.
+          #
+          # Only `+` lines matter: a line this branch DELETED was already in
+          # main's history and is not this pull request's problem. `+++` is the
+          # file header, not content. Commit-message lines in `log -p` output
+          # are indented, so they cannot be mistaken for added content here —
+          # they are scanned separately above, after their trailers are stripped.
+          git log --no-merges -p --unified=0 "$BASE..$HEAD" \
+            | grep -E '^\+' | grep -vE '^\+\+\+' \
+            > "$scan/added-lines.txt" || true
+
+          # The scanner skips any file over 2 MB, silently. A large diff would
+          # therefore be waved through — split it so nothing is skipped.
+          split -b 1000000 -d "$scan/added-lines.txt" "$scan/added-part." || true
+          rm -f "$scan/added-lines.txt"
+
+          wc -l "$scan"/* || true
+
+      - name: Scan the commit messages and the added lines
+        run: |
+          set -euo pipefail
+          # `python3`, not the venv: the scanner imports nothing outside the
+          # standard library, which is what lets it run here with no install
+          # step at all. This job is green or red in well under a minute, and it
+          # cannot be starved by an unrelated dependency failing to resolve.
+          python3 scripts/privacy_check.py "$RUNNER_TEMP/history-scan"
+
+  # ── pull-request hygiene ─────────────────────────────────────────────────
+  # Exactly one blocking rule and one advisory note. Everything else that was
+  # considered here — mandatory labels, a hard size limit, a description-length
+  # check — was left out because it fails pull requests for reasons unrelated to
+  # whether the change is correct, and a gate like that is disabled within a
+  # month. `.github/GUARDRAILS.md` records what was rejected and why.
+  pr-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The title is BLOCKING because `main` is squash-merged: the title is not
+      # decoration, it is the commit message that lands in the history and the
+      # line a reader sees in `git log` a year from now. "fixes" is not one.
+      #
+      # The vocabulary matches what the tooling already produces: Dependabot is
+      # configured in `.github/dependabot.yml` with `prefix: deps` for pip and
+      # `prefix: ci` for actions, so its pull requests satisfy this without
+      # anyone touching them.
+      - name: The title has to survive being squashed
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert|deps)(\([a-z0-9._/-]+\))?!?: .{4,}'
+          if printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "title ok"
+            exit 0
+          fi
+          cat <<'EOF'
+          ::error::The pull-request title is the commit message this lands under.
+
+          Expected:  type(optional scope)!: what changed
+          Types:     feat fix perf refactor docs test build ci chore revert deps
+          The `!` marks a breaking change.
+
+          For example:
+            fix(cascade): keep refused text in the contest
+            feat(engines): read_page geometry for the Vision backend
+            docs: explain why the vetoes run in rising order of cost
+
+          Edit the title — no new commit is needed, this check re-runs on
+          `edited`.
+          EOF
+          exit 1
+
+      # ADVISORY, never blocking. A size limit that fails a pull request teaches
+      # people to split a coherent change into incoherent halves, which is worse
+      # for a reviewer than one big diff. What is useful is the reviewer knowing
+      # what they are walking into before they open it, which a warning does.
+      - name: How big is this
+        env:
+          ADDITIONS: ${{ github.event.pull_request.additions }}
+          DELETIONS: ${{ github.event.pull_request.deletions }}
+          FILES: ${{ github.event.pull_request.changed_files }}
+        run: |
+          set -euo pipefail
+          total=$(( ADDITIONS + DELETIONS ))
+          echo "$FILES files, +$ADDITIONS / -$DELETIONS lines"
+          if [ "$total" -gt 1000 ] || [ "$FILES" -gt 40 ]; then
+            echo "::warning::$FILES files and $total changed lines. Nobody reviews that line by line. If it splits into a refactor and a behaviour change, split it — the behaviour half is the one that needs reading."
+          fi

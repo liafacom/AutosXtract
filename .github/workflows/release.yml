@@ -1,0 +1,268 @@
+name: Release
+
+# Fires on a version tag and nothing else. Publishing is deliberately NOT
+# attached to a push on `main`: a release is a decision, and it should take a
+# gesture that cannot be made by accident.
+#
+#   git tag -a v0.4.1 -m "0.4.1" && git push origin v0.4.1
+#
+# The whole flow, and what to do when a step refuses, is written down in
+# RELEASING.md. Read that before cutting a release; this file is what enforces
+# it, not what explains it.
+on:
+  push:
+    tags: ["v*"]
+
+# Nothing here writes to the repository by default. The publishing job asks for
+# `id-token: write` and the release job for `contents: write`, separately, and
+# only those jobs get them — see below.
+permissions:
+  contents: read
+
+# Never cancel a release. A build interrupted halfway through can leave a
+# distribution uploaded and its sibling missing, and PyPI does not allow
+# re-uploading a filename.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The tag and `_version.py` are two places that state the version, and
+      # they drift. Publishing 0.4.0 under the tag v0.4.1 cannot be undone:
+      # PyPI refuses to reuse a filename, so the wrong artefact is permanent
+      # and the right one has to go out under a burnt version number. Checking
+      # costs three lines.
+      - name: The tag must match the package version
+        run: |
+          python -m pip install --upgrade pip
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python -c "import re,pathlib; print(re.search(r'__version__ = \"([^\"]+)\"', pathlib.Path('autosxtract/_version.py').read_text()).group(1))")
+          echo "tag=$tag package=$pkg"
+          test "$tag" = "$pkg" || { echo "::error::tag v$tag does not match autosxtract/_version.py ($pkg)"; exit 1; }
+
+      # The third place the version appears. GitHub's generated notes list the
+      # pull requests mechanically and will happily produce a release body for
+      # a version nobody wrote a word about — and a release with no human
+      # section is the one nobody can read a year later, when the question is
+      # not "what merged" but "why did the threshold move".
+      #
+      # Cheap to satisfy (add the heading before tagging) and it catches the
+      # single most common release mistake: tagging with the section still
+      # called `[Unreleased]`.
+      - name: CHANGELOG.md must have a section for this version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          grep -qF "## [$tag]" CHANGELOG.md || {
+            echo "::error file=CHANGELOG.md::no '## [$tag]' section — the release notes have no human half. Move [Unreleased] to [$tag] and tag again."
+            exit 1
+          }
+
+      - name: Build the wheel and the sdist
+        run: |
+          pip install build
+          python -m build
+
+      # The same check the packaging job in CI runs, repeated here rather than
+      # trusted from there, because this is the artefact that actually goes
+      # out. A subpackage missing from the wheel is invisible inside the
+      # repository — the source tree is on `sys.path` and hides the hole — and
+      # only shows in a clean environment. Doing it BEFORE publishing is the
+      # whole point: after publishing, the only fix is another version number.
+      - name: Install in a clean environment and import
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install dist/*.whl
+          /tmp/clean/bin/python -c "import autosxtract; print(autosxtract.__version__)"
+          /tmp/clean/bin/autosxtract --version
+          /tmp/clean/bin/autosxtract diagnose
+
+      # `twine check` catches the other packaging failure that only appears
+      # after upload: a README that PyPI refuses to render, leaving the project
+      # page blank.
+      - name: Check the metadata
+        run: |
+          pip install twine
+          twine check dist/*
+
+      # One last look for a real document or an identifier in what is about to
+      # be published. Redundant with CI on purpose: CI ran on a commit, this
+      # runs on the tree the tag points at, and a leak published to PyPI is
+      # mirrored worldwide within minutes.
+      - name: Privacy scan
+        run: python scripts/privacy_check.py .
+
+      # The SAME two files go to PyPI and to the GitHub Release. They are built
+      # once and carried between jobs rather than rebuilt, because two builds
+      # of "the same" tree are two artefacts, and then the checksum on the
+      # Release does not describe what is on PyPI — which defeats the reason
+      # for attaching them at all.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    # A GitHub environment is what makes the publish reviewable. Configure it
+    # once at Settings -> Environments -> pypi, with a required reviewer: the
+    # job then waits for a human before it uploads, and the OIDC identity it
+    # presents to PyPI is scoped to this environment name.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/autosxtract
+
+    # Trusted Publishing: no API token is stored anywhere. The job mints a
+    # short-lived OIDC identity that PyPI verifies against a publisher it has
+    # been told to trust — this repository, this workflow file, this
+    # environment — and exchanges it for a credential valid for minutes.
+    #
+    # This is why there is no `secrets.PYPI_API_TOKEN` here and must never be:
+    # a long-lived token in repository secrets is readable by any workflow that
+    # a contributor can cause to run, and it does not expire.
+    #
+    # Register the publisher ONCE, at
+    #   https://pypi.org/manage/project/autosxtract/settings/publishing/
+    # with exactly these four values — they are matched literally against the
+    # OIDC claims, so a mismatch in case or a stray `.github/workflows/` prefix
+    # fails the upload with "not a trusted publisher" and nothing else:
+    #
+    #   Owner:        liafacom
+    #   Repository:   AutosXtract
+    #   Workflow:     release.yml        <- filename only, no path
+    #   Environment:  pypi               <- must equal `environment.name` above
+    #
+    # RELEASING.md has the full runbook, including what to do the very first
+    # time, when the project does not exist on PyPI yet.
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # The only third-party action in this repository, and it is the one PyPI
+      # itself documents for Trusted Publishing. `release/v1` is the branch the
+      # PyPA maintains for it. An admin hardening the supply chain should
+      # replace this ref with the full commit SHA of the release being adopted
+      # — read it off the action's releases page, and never invent one.
+      #
+      # Digital attestations (PEP 740) are generated and uploaded by default
+      # for projects using Trusted Publishing, which is the other half of what
+      # `id-token: write` buys: not only "PyPI believes this upload came from
+      # here" but "anyone downloading can check that afterwards". Nothing to
+      # configure — it is on unless it is switched off, and it must not be.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # The GitHub Release comes AFTER the upload, on purpose. It is the
+  # announcement, and an announcement of something that did not happen is worse
+  # than a missing one: a Release page linking to a version PyPI never received
+  # sends everyone who reads it to `pip install` a version that 404s.
+  #
+  # This job is also the reason the tag alone is not the release. A tag is a
+  # pointer; a Release is a page with the notes, the two distribution files and
+  # a date, and it is what GitHub's "Releases" sidebar, the Atom feed and every
+  # dependency scanner actually read.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+
+    # The only write this workflow performs on the repository, and it is
+    # scoped to the one job that needs it. `contents: write` is what creating a
+    # Release and uploading its assets requires.
+    permissions:
+      contents: write
+
+    steps:
+      # `gh` resolves the repository from the checkout. Only the tag is needed;
+      # a full history would be fetched for nothing.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Two halves, deliberately different in kind:
+      #
+      #   --notes        the human section, lifted verbatim from CHANGELOG.md.
+      #                  It says WHY, and carries the measurement behind every
+      #                  changed number. It is prepended to what follows.
+      #   --generate-notes
+      #                  the mechanical section, grouped by pull request label
+      #                  according to .github/release.yml. Exhaustive, credits
+      #                  every author, and nobody can forget to update it.
+      #
+      # Neither replaces the other. The changelog is the reason; the generated
+      # list is the receipt.
+      #
+      # `--verify-tag` refuses if the tag is not on the remote, which is the
+      # only cheap guard against a Release created against a tag that was
+      # force-moved between the push and this job.
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+
+          # The section between `## [x.y.z]` and the next `## [`. `awk` rather
+          # than `sed` because the range has to stop at the NEXT heading, not
+          # at the last one in the file — and `index()` rather than `~`,
+          # because the heading contains `[` and `.`, which as a REGEX match
+          # something else entirely and silently produce empty notes.
+          #
+          # The section also ends at the file's trailing matter — the `---`
+          # rule and the link-reference definitions at the bottom. The last
+          # released version has no heading after it, so without those two
+          # stop conditions the newest release always drags the footer into
+          # its notes.
+          notes=$(awk -v v="## [$version]" '
+            index($0, v) == 1  { in_section = 1; next }
+            !in_section        { next }
+            /^## /             { exit }
+            /^---[[:space:]]*$/ { exit }
+            /^\[[^]]+\]:[[:space:]]/ { exit }
+                               { print }
+          ' CHANGELOG.md)
+
+          # An empty section passes the grep guard in `build` (the heading is
+          # there) and would still ship a release whose human half is blank.
+          test -n "${notes//[[:space:]]/}" || {
+            echo "::error file=CHANGELOG.md::the '## [$version]' section is empty"
+            exit 1
+          }
+
+          # A pre-release must not become the "Latest" badge on the repository
+          # home page — that badge is what `pip install autosxtract` users read
+          # as "the current version", and pip itself will not install a
+          # pre-release without `--pre`. The two have to agree.
+          flags=(--verify-tag --generate-notes --title "$tag" --notes "$notes")
+          case "$version" in
+            *a[0-9]*|*b[0-9]*|*rc[0-9]*|*.dev*) flags+=(--prerelease --latest=false) ;;
+            *)                                  flags+=(--latest) ;;
+          esac
+
+          # The wheel and the sdist, the same files that went to PyPI. They are
+          # attached because a GitHub Release is the only copy that survives a
+          # PyPI project deletion, and because an air-gapped install has
+          # nowhere else to fetch them from.
+          gh release create "$tag" "${flags[@]}" dist/*.whl dist/*.tar.gz

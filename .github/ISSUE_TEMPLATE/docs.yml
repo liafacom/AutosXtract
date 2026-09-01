@@ -1,0 +1,65 @@
+name: Documentation
+description: The documentation is wrong, missing, out of date, or promises something the code does not do.
+title: "[docs] "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Documentation that ages silently is worse than no documentation,
+        because readers trust it. `tests/test_documentation.py` reads the
+        README as the source of truth and checks that every public name it
+        mentions exists, so a rename that leaves the text behind turns CI red
+        rather than turning a user's afternoon red. If you have found a
+        promise the code does not keep, that test has a hole in it — say so,
+        and the fix should close both.
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - README.md
+        - CLAUDE.md (the project rules)
+        - CONTRIBUTING.md
+        - docs/ (the built documentation site)
+        - notebooks/
+        - a docstring or a code comment
+        - the CLI --help output
+        - an issue or pull request template
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Which section or file
+      description: A heading, a line number, or a URL.
+      placeholder: "README.md — 'How to add an engine'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong
+      description: Quote the passage and say what it claims. If it is a promise the code does not keep, say what the code actually does.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What it should say
+      description: |
+        A concrete replacement if you have one. The register to aim at:
+        explain WHY, and cite the consequence that fixed the decision. A
+        sentence that only restates the code is not worth the line it takes.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This report contains no real document, extracted text or personal data.
+          required: true
