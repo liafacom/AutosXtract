@@ -81,9 +81,6 @@
             "context": "CodeQL (python)"
           },
           {
-            "context": "dependency-review"
-          },
-          {
             "context": "pr-hygiene"
           }
         ]
