@@ -1,0 +1,75 @@
+// A development container that reproduces the LINUX side of the cascade:
+//
+//     native -> paddle          <- what you get in here
+//     native -> vision -> paddle   <- what a Mac gets, and this container never will
+//
+// APPLE VISION CANNOT EXIST HERE, and no amount of configuration changes that.
+// Vision is a macOS framework reached through pyobjc; the `pyobjc-framework-
+// Vision` dependency carries `sys_platform == 'darwin'`, so pip does not even
+// install it, and a Linux kernel has no Neural Engine to talk to. The container
+// is therefore the right place to reproduce a Linux bug, run the suite the way
+// CI runs it, and check that the library degrades correctly WITHOUT Vision —
+// and the wrong place to conclude anything about the Apple path. Whoever
+// touches engines/vision.py needs a Mac; `autosxtract diagnose` in here will
+// tell them so in the first three lines.
+{
+  "name": "autosxtract (Linux cascade)",
+  "build": { "dockerfile": "Dockerfile" },
+
+  // The one command a newcomer runs, run for them. It creates .venv, installs
+  // the project against constraints/dev.txt, installs the git hooks and prints
+  // the cascade — so the first thing visible in the terminal is what this
+  // machine can actually do.
+  //
+  // Add `--extras veto` to bring the Tesseract witness in: the binary is already
+  // in the image, so it works, but it is a second engine most work does not
+  // need, and CI's quality job does not have it either.
+  "postCreateCommand": "./scripts/bootstrap.sh",
+
+  // The model weights (~30 MB of PP-OCRv6) and the pip wheels (~200 MB with
+  // ONNX Runtime) survive a rebuild in this volume. Without it every rebuild
+  // re-downloads them, and a slow container is one people stop rebuilding —
+  // which is how a container stops matching the repository.
+  "mounts": [
+    "source=autosxtract-cache,target=/home/vscode/.cache,type=volume"
+  ],
+  "postStartCommand": "sudo chown -R vscode:vscode /home/vscode/.cache",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "tamasfe.even-better-toml",
+        "EditorConfig.EditorConfig"
+      ],
+      "settings": {
+        // The venv bootstrap builds, preselected: no "which interpreter?" step,
+        // and the test runner uses the same one the Makefile does.
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.terminal.activateEnvInCurrentTerminal": true,
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestArgs": ["tests"],
+
+        // fromEnvironment, not the extension's bundled binary: the editor must
+        // format with the SAME ruff as constraints/dev.txt, pre-commit and CI.
+        // A fourth ruff in the loop reformats on save what CI then rejects.
+        "ruff.importStrategy": "fromEnvironment",
+        "mypy-type-checker.importStrategy": "fromEnvironment",
+
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": { "source.organizeImports.ruff": "explicit" }
+        },
+        "files.insertFinalNewline": true,
+        "files.trimTrailingWhitespace": true
+      }
+    }
+  },
+
+  "remoteUser": "vscode"
+}

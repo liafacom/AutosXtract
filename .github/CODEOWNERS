@@ -1,0 +1,137 @@
+# Code owners — who GitHub asks for a review, and on what.
+#
+# ── What this file does, and what it does NOT do ─────────────────────────
+# On its own, CODEOWNERS only REQUESTS a review. It does not block anything:
+# a pull request touching every line below can be merged with nobody having
+# looked at it, and GitHub will not complain. The file only becomes a gate
+# when branch protection is told to enforce it.
+#
+# A repository admin has to turn this on once:
+#
+#     Settings -> Branches -> Branch protection rules -> main
+#       [x] Require a pull request before merging
+#       [x] Require approvals (1)
+#       [x] Require review from Code Owners        <- this is the one
+#       [x] Dismiss stale pull request approvals when new commits are pushed
+#       [x] Require status checks to pass before merging
+#           -> quality, with-ocr, packaging
+#       [x] Require branches to be up to date before merging
+#       [ ] Allow force pushes / Allow deletions   <- leave both off
+#
+# On a repository using rulesets instead of the classic rules, the equivalent
+# is Settings -> Rules -> Rulesets -> New branch ruleset, targeting `main`,
+# with "Require a pull request before merging" and its "Require review from
+# Code Owners" sub-option checked.
+#
+# Without that checkbox, everything below is a polite suggestion.
+#
+# ── Why the targeted rules exist when they name the same two people ──────
+# With two maintainers, every line names the same pair, so the mechanical
+# effect of the global rule and of the specific ones is identical today. The
+# specific ones are still worth writing, for two reasons:
+#
+#   1. The review request that arrives says WHICH invariant the diff touches.
+#      "Somebody changed a file" and "somebody changed the acceptance gate"
+#      deserve different amounts of attention, and the second should not have
+#      to be discovered by reading the diff.
+#   2. The day a third maintainer joins, the split already exists and nobody
+#      has to reconstruct from memory which files are load-bearing.
+#
+# Later patterns win over earlier ones — the file is read top to bottom and
+# the LAST match decides. That is why the global rule comes first.
+
+# ── Everything ──────────────────────────────────────────────────────────
+*                               @ArthurSilvaDantas @edsontm
+
+# ── The engine contract ─────────────────────────────────────────────────
+# Two levels, and the detailed one (``read_page``, with geometry) is what the
+# containment layers stand on. Changing the base class or the registry changes
+# what every present and future engine has to promise, and a silently relaxed
+# contract shows up as a cascade that stopped running the layers.
+/autosxtract/engines/base.py    @ArthurSilvaDantas @edsontm
+/autosxtract/engines/           @ArthurSilvaDantas @edsontm
+
+# ── The cascade ─────────────────────────────────────────────────────────
+# The orchestrator: order of steps, vetoes before the expensive one, the
+# contest between candidates. Almost every regression that lost text in the
+# past was a change in HOW the pieces were combined, not in a piece.
+/autosxtract/cascade.py         @ArthurSilvaDantas @edsontm
+/autosxtract/steps/             @ArthurSilvaDantas @edsontm
+
+# ── The quality gates and the thresholds ────────────────────────────────
+# ``gate.py`` is the single acceptance criterion, ``rejection.py`` the
+# replacement gate, ``vetoes.py`` what runs before paying for an expensive
+# step. ``config.py`` holds every number, each annotated with the measurement
+# that fixed it — a diff here without a measurement in the pull request body
+# is the thing this project most wants to make hard.
+/autosxtract/quality/gate.py         @ArthurSilvaDantas @edsontm
+/autosxtract/quality/rejection.py    @ArthurSilvaDantas @edsontm
+/autosxtract/quality/vetoes.py       @ArthurSilvaDantas @edsontm
+/autosxtract/config.py               @ArthurSilvaDantas @edsontm
+
+# ── The pattern data ────────────────────────────────────────────────────
+# The adaptation seam. Code is English so the library travels; the catalogue
+# holds the corpus-specific regexes — the conformity stamp, the enclitic
+# pronouns, the forensic abbreviations, the identity-card markers. Anyone
+# porting to another corpus writes a pack and touches nothing else, so two
+# things get read closely here: a language-specific rule appearing OUTSIDE the
+# catalogue, and an entry losing the `why` that records the measurement which
+# fixed it.
+#
+# `base.toml` in particular must describe no language at all. The day a
+# Portuguese word lands in it, the layering stops meaning anything and the
+# seam is closed again.
+/autosxtract/patterns/               @ArthurSilvaDantas @edsontm
+/autosxtract/patterns/data/base.toml @ArthurSilvaDantas @edsontm
+/autosxtract/quality/lexicon.py      @ArthurSilvaDantas @edsontm
+/autosxtract/quality/stamp.py        @ArthurSilvaDantas @edsontm
+/autosxtract/quality/prose.py        @ArthurSilvaDantas @edsontm
+/autosxtract/quality/screening.py    @ArthurSilvaDantas @edsontm
+/autosxtract/quality/markers.py      @ArthurSilvaDantas @edsontm
+
+# ── The privacy machinery ───────────────────────────────────────────────
+# The scanner, the hook order that runs it first, the ignore rules and the
+# synthetic fixtures. This is the only check in the project that prevents a
+# leak rather than merely a red build; weakening it is not a style decision.
+/scripts/privacy_check.py       @ArthurSilvaDantas @edsontm
+/.pre-commit-config.yaml        @ArthurSilvaDantas @edsontm
+/.gitignore                     @ArthurSilvaDantas @edsontm
+/tests/conftest.py              @ArthurSilvaDantas @edsontm
+
+# ── CI, governance and the release path ─────────────────────────────────
+# A workflow file can grant itself permissions and publish to PyPI. It is
+# reviewed as production code, not as configuration.
+/.github/                       @ArthurSilvaDantas @edsontm
+/.github/workflows/             @ArthurSilvaDantas @edsontm
+/.github/CODEOWNERS             @ArthurSilvaDantas @edsontm
+
+# ── The gate itself ─────────────────────────────────────────────────────
+# These files ARE the protection of `main`: the rulesets say what may be
+# merged, and the setup scripts are what puts them on GitHub. A diff here
+# does not change the code — it changes what can reach users without being
+# read. It is the one place where "looks fine" is not a review.
+/.github/rulesets/              @ArthurSilvaDantas @edsontm
+/.github/GUARDRAILS.md          @ArthurSilvaDantas @edsontm
+/scripts/github_guardrails_setup.sh  @ArthurSilvaDantas @edsontm
+/scripts/github_project_setup.sh     @ArthurSilvaDantas @edsontm
+
+# ── Packaging and the platform decision ─────────────────────────────────
+# The install-time half of the platform decision lives in the PEP 508 markers
+# in pyproject.toml; the runtime half lives in platform.py and the registry.
+# Deleting either because "the other already guarantees it" is a recurring
+# temptation and has its own section in CLAUDE.md.
+/pyproject.toml                 @ArthurSilvaDantas @edsontm
+/constraints/                   @ArthurSilvaDantas @edsontm
+/scripts/bootstrap.sh           @ArthurSilvaDantas @edsontm
+/scripts/lock.py                @ArthurSilvaDantas @edsontm
+/Makefile                       @ArthurSilvaDantas @edsontm
+/autosxtract/_version.py        @ArthurSilvaDantas @edsontm
+/autosxtract/platform.py        @ArthurSilvaDantas @edsontm
+/autosxtract/resources.py       @ArthurSilvaDantas @edsontm
+/CHANGELOG.md                   @ArthurSilvaDantas @edsontm
+
+# ── The documents that describe the rules ───────────────────────────────
+/CLAUDE.md                      @ArthurSilvaDantas @edsontm
+/CONTRIBUTING.md                @ArthurSilvaDantas @edsontm
+/SECURITY.md                    @ArthurSilvaDantas @edsontm
+/CODE_OF_CONDUCT.md             @ArthurSilvaDantas @edsontm

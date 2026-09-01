@@ -1,0 +1,120 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  # On a pull request the site is BUILT and not deployed. A documentation
+  # build that only runs after merging tells you it is broken at the moment it
+  # is already broken in public.
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # The check name a ruleset names is the job NAME, and it defaults to the job
+    # id. `build` is the id here and also the id of the build job in
+    # release.yml: two different checks that would arrive under one string. They
+    # never collide in practice (release.yml only fires on a tag, never on a
+    # pull request), but "the required check called build" would be a sentence
+    # nobody could resolve by reading the repository. Naming it fixes that
+    # without renaming the job everything else refers to.
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      # Whether there is anything to build at all. The site is being written
+      # in a separate branch of work; until `mkdocs.yml` lands at the root,
+      # this workflow has to be GREEN and silent rather than red. A workflow
+      # that is permanently red teaches everyone to ignore the red mark, and
+      # then it stops reporting the failure that matters.
+      mkdocs: ${{ steps.detect.outputs.mkdocs }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # `hashFiles` reads the workspace, so it can only be evaluated AFTER the
+      # checkout. Putting `if: hashFiles('mkdocs.yml') != ''` on the job itself
+      # looks equivalent and is not: at job level the workspace is still empty,
+      # the function returns an empty string, and the job silently never runs —
+      # including once mkdocs.yml exists.
+      - name: Is there a site to build?
+        id: detect
+        run: |
+          if [ "${{ hashFiles('mkdocs.yml') }}" != "" ]; then
+            echo "mkdocs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mkdocs=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no mkdocs.yml at the repository root yet — nothing to build"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.detect.outputs.mkdocs == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # The package itself is installed, not just the documentation tooling:
+      # `mkdocstrings` imports the modules to read their signatures and
+      # docstrings, so a docs build with the package absent produces a site
+      # with empty API pages and no error.
+      #
+      # If the documentation grows its own pinned requirements file, that wins;
+      # otherwise the minimum set that renders an mkdocs-material site with API
+      # pages. Neither becomes a project dependency — nothing here touches
+      # pyproject.toml, because `pip install autosxtract` must not drag a
+      # documentation toolchain onto a user's machine.
+      - name: Install
+        if: steps.detect.outputs.mkdocs == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          if [ -f docs/requirements.txt ]; then
+            pip install -r docs/requirements.txt
+          else
+            pip install mkdocs mkdocs-material "mkdocstrings[python]"
+          fi
+
+      # `--strict` turns a warning into a failure. It is what catches the two
+      # ways documentation rots without anybody noticing: a link to a page that
+      # was renamed, and a page that exists but is in no navigation entry, so
+      # it is reachable only by guessing the URL.
+      - name: Build
+        if: steps.detect.outputs.mkdocs == 'true'
+        run: mkdocs build --strict --site-dir site
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.detect.outputs.mkdocs == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.mkdocs == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    # The only job in this repository allowed to write anything. `pages: write`
+    # and `id-token: write` are what the deployment needs to prove it comes
+    # from this workflow; `contents: read` is everything else it gets.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # Requires Pages to be switched on once, by an admin:
+      # Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
+      # With the source left on "Deploy from a branch" this step fails with a
+      # message that does not obviously say so.
+      - uses: actions/configure-pages@v5
+      - id: deployment
+        uses: actions/deploy-pages@v4

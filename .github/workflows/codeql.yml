@@ -1,0 +1,78 @@
+name: CodeQL
+
+# Static analysis for the things a linter does not look for: a path traversal on
+# write, a `subprocess` call built from something a document influenced, a
+# regular expression that backtracks catastrophically on crafted input. This
+# library's input is an untrusted PDF supplied by whoever is being extracted, so
+# "the parser can be made to do something else" is a plausible defect here and
+# not a theoretical one.
+#
+# ruff and mypy in the `quality` job read one file at a time. CodeQL builds a
+# dataflow graph across the package and asks whether a value that came from
+# outside can reach somewhere it should not — a different question, which is why
+# this exists alongside them rather than instead of them.
+#
+# Free on public repositories. On a private repository this workflow fails with
+# a licensing error unless GitHub Code Security is purchased; see
+# `.github/GUARDRAILS.md` for the fallback.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly, because the value of static analysis is not only in new code. The
+  # query packs are updated continuously, and a rule written next month can find
+  # a defect in code that merged today and has not been touched since. A repo
+  # that only scans on pull requests stops learning the moment it stops changing.
+  schedule:
+    - cron: "27 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    # The check name a ruleset has to name is THIS string, verbatim. It is set
+    # explicitly rather than left to default to the job id so that adding a
+    # second language later (a matrix leg) does not rename the existing check
+    # and silently empty the required-checks rule.
+    name: CodeQL (python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # `security-events: write` is what lets the analysis upload its results to
+    # the Security tab; without it the job runs and the findings go nowhere.
+    # `actions: read` is only needed on private repositories, and is harmless
+    # here. Nothing else is granted — in particular not `contents: write`.
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `build-mode: none` is the correct value for Python: there is nothing to
+      # compile, and CodeQL extracts straight from the sources. Leaving it unset
+      # makes the action try to autodetect a build, which on a project with a
+      # `pyproject.toml` wastes minutes and can fail on an optional dependency
+      # that has no wheel for the runner.
+      #
+      # No `queries:` override. The default pack is the one tuned for signal;
+      # `security-extended` finds more and reports more that is not real, and a
+      # security tab nobody reads is worth exactly nothing. Widen it when the
+      # default pack has stopped finding anything, not before.
+      - name: Initialise
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          build-mode: none
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:python"

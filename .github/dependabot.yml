@@ -1,0 +1,56 @@
+# Dependency updates.
+#
+# Grouped and weekly, deliberately. Ungrouped Dependabot on a project with this
+# dependency surface — PyMuPDF, ONNX Runtime, rapidocr, OpenCV, pydantic —
+# opens a dozen pull requests a week, each needing the full matrix plus the
+# macOS runner. The predictable outcome is that they get merged without being
+# read, which is worse than not having the bot: an unread dependency bump is an
+# unreviewed change to code that renders and parses untrusted PDFs.
+#
+# One grouped pull request a week is something a person can actually review.
+# Majors stay separate, because for this project they are not routine: a
+# PyMuPDF major can change the text-extraction API the native step depends on,
+# and an ONNX Runtime major can change which execution providers exist on a
+# given platform.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Campo_Grande
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "deps"
+      include: scope
+    groups:
+      # Everything that is not a major, in one pull request. CI is the review:
+      # if the matrix, the OCR job and the packaging job are green, a patch
+      # bump has been exercised on three Python versions and two operating
+      # systems.
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Majors are handled by hand, one at a time, with a measurement. They are
+      # not in the group above and Dependabot will still open them singly.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Campo_Grande
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
