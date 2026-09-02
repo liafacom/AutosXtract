@@ -76,11 +76,13 @@ autosxtract diagnose
 ```
 
 ```
-autosxtract 0.5.0
+autosxtract 0.6.0
 machine    Linux (x86_64)
 engines:
   [ ] vision       vision requires Darwin  (single queue: ignores threads)
   [x] paddle       PP-OCRv6 tiny
+  [ ] tesseract    tesseract unavailable: No module named 'pytesseract'
+orientation: REQUESTED BUT UNAVAILABLE: pytesseract is not installed
 cascade:   native -> paddle
 ```
 

@@ -32,6 +32,10 @@ generated list is the *receipt*. The whole procedure is in `RELEASING.md`.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.0] — 2026-09-02
+
 A review pass over the whole tree. Every entry below is a case where the code
 and a written invariant disagreed, and the invariant was the one that had been
 measured — so the code moved.
@@ -378,6 +382,7 @@ gained options and `Config` gained a field; nothing existing breaks.
 Versions before 0.4.0 predate this file. Their history lives in the docstring
 of `autosxtract/_version.py` and in the git log.
 
-[Unreleased]: https://github.com/liafacom/AutosXtract/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/liafacom/AutosXtract/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/liafacom/AutosXtract/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/liafacom/AutosXtract/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/liafacom/AutosXtract/releases/tag/v0.4.0
