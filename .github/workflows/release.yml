@@ -66,6 +66,20 @@ jobs:
             exit 1
           }
 
+      # The suite, on the tree the TAG points at. Not a duplicate of CI: the tag
+      # ruleset constrains the tag's NAME, not what it points at, so
+      # `git tag v0.6.0 <any commit>` used to build and upload a tree no test had
+      # ever run on. CI being green on `main` says nothing about a tag placed
+      # somewhere else, and a bad upload to PyPI cannot be withdrawn — only
+      # superseded by burning the next version number.
+      #
+      # `-m "not apple"` because this runner is Linux, exactly as the `quality`
+      # job does; the Apple half was gated by CI before the tag was cut.
+      - name: The suite must pass on the tagged tree
+        run: |
+          pip install -e ".[dev]"
+          pytest -m "not apple" -q
+
       - name: Build the wheel and the sdist
         run: |
           pip install build

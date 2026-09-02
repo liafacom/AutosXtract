@@ -16,6 +16,14 @@ copyright: MIT
 # but sits in no nav entry, reachable only by guessing the URL.
 strict: false # the flag on the command line decides; CI always passes --strict
 
+# Anchors are validated too, and that is not decoration: collapsing the eleven
+# ADR files into one page turned every `adr/0003-….md` into an `index.md#0003-…`,
+# and a renamed heading would silently produce a link that lands at the top of
+# the page instead of at the record. `warn` plus `--strict` makes it a failure.
+validation:
+  anchors: warn
+  unrecognized_links: warn
+
 theme:
   name: material
   language: en
@@ -89,25 +97,16 @@ markdown_extensions:
 nav:
   - Overview: index.md
   - Getting started: getting-started.md
+  - Command line: cli.md
+  - Python API: api.md
+  - Configuration: configuration.md
   - Architecture: architecture.md
-  - The interfaces: interfaces.md
   - Quality gates: gates.md
+  - Files that are not PDFs: formats.md
   - Extending:
       - A new engine: extending/engine.md
       - A new step: extending/step.md
       - A new pattern pack: extending/patterns.md
-  - Configuration: configuration.md
+      - The interfaces: interfaces.md
   - Testing: testing.md
-  - Decision records:
-      - Why these exist: adr/index.md
-      - 0001 No networking in the default cascade: adr/0001-no-networking-in-the-default-cascade.md
-      - 0002 One acceptance criterion: adr/0002-one-acceptance-criterion.md
-      - 0003 A missing engine is never an exception: adr/0003-a-missing-engine-is-never-an-exception.md
-      - 0004 Refused text still competes: adr/0004-refused-text-still-competes.md
-      - 0005 The replacement gate discards: adr/0005-the-replacement-gate-discards.md
-      - 0006 PyMuPDF is serialised: adr/0006-pymupdf-is-serialised.md
-      - 0007 Confidence does not arbitrate quality: adr/0007-confidence-does-not-arbitrate-quality.md
-      - 0008 Patterns are data: adr/0008-patterns-are-data.md
-      - 0009 Interfaces are the extension seam: adr/0009-interfaces-are-the-extension-seam.md
-      - 0010 Parallelism is decided by the machine: adr/0010-parallelism-is-decided-by-the-machine.md
-      - 0011 No real document in the repository: adr/0011-no-real-document-in-the-repository.md
+  - Decision records: adr/index.md

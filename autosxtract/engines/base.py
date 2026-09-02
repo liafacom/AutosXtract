@@ -249,13 +249,19 @@ class OCREngine:
         confidences: list[float] = []
         detailed: list[Page] = []
         failures: list[str] = []
+        # One slot per page SENT, in order — a page that failed keeps its empty
+        # slot instead of vanishing. ``results`` comes from ``map``, so it is
+        # already aligned with ``pages``; that alignment is the whole value.
+        page_texts: list[str] = []
         answered = 0
         for r in results:
             if isinstance(r, _Failed):
                 if r.reason not in failures:
                     failures.append(r.reason)
+                page_texts.append("")
                 continue
             if r is None:
+                page_texts.append("")
                 continue
             text, confidence, page = r
             answered += 1
@@ -264,6 +270,9 @@ class OCREngine:
             if (text or "").strip():
                 parts.append(text.strip())
                 confidences.append(confidence)
+                page_texts.append(text.strip())
+            else:
+                page_texts.append("")
         if answered == 0:
             if not failures:
                 # Every page came back legitimately empty. That IS an answer.
@@ -277,6 +286,7 @@ class OCREngine:
                 pages_sent=len(pages),
                 pages_answered=0,
                 ms=round((time.perf_counter() - t0) * 1000, 1),
+                page_texts=page_texts,
                 failures=failures,
             )
         return Transcription(
@@ -289,7 +299,16 @@ class OCREngine:
             # Only when EVERY page answered in detail: a partial list would make
             # the layers operate on a different document from the one
             # transcribed, and the page index would stop lining up.
-            pages=detailed if len(detailed) == answered else [],
+            #
+            # The comparison is against the pages SENT, not against the ones that
+            # answered. A page that RAISED is counted in neither ``detailed`` nor
+            # ``answered``, so comparing the two let the equality survive a hole:
+            # the list came back compacted, ``layers.apply`` pairs it positionally
+            # against the images, and page 3's line geometry was cropped out of
+            # page 2's image — silently, on the exact documents where an engine
+            # is already misbehaving.
+            pages=detailed if len(detailed) == len(pages) else [],
+            page_texts=page_texts,
             failures=failures,
         )
 
@@ -361,6 +380,19 @@ _INSTANCES: dict[tuple, OCREngine] = {}
 _LOCK = threading.Lock()
 
 
+def _first_line(doc: str | None) -> str:
+    """The first non-empty line of a docstring, or ``""``.
+
+    Never raises: a registry that refuses an engine because its author did not
+    write a docstring is a registry that fails on the extension point it exists
+    to offer.
+    """
+    for line in (doc or "").strip().splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 def register(
     *,
     name: str,
@@ -393,7 +425,12 @@ def register(
             priority=priority,
             platforms=platforms,
             extra=extra,
-            description=description or (cls.__doc__ or "").strip().splitlines()[0],
+            # ``splitlines()[0]`` on a class with no docstring is an IndexError
+            # on an empty list — and this is the library's advertised extension
+            # point, whose own worked example declares an engine with neither a
+            # docstring nor a ``description``. It also took the whole package
+            # down under ``python -OO``, where every ``__doc__`` is None.
+            description=description or _first_line(cls.__doc__),
         )
         return cls
 

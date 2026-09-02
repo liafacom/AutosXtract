@@ -32,15 +32,31 @@ def _cmd_extract(args: argparse.Namespace) -> int:
         page_parallelism=args.parallelism,
         layers=not args.no_layers,
         page_routing=args.routes,
+        fix_orientation=not args.no_fix_orientation,
     )
     cascade = _build(config, args)
     if not args.files:
         print("no files", file=sys.stderr)
         return 2
 
+    # One bad file must not cost the batch. ``Cascade.extract`` never raises —
+    # that is the library's stance, and CLAUDE.md §3's — but ``extract_file``
+    # reads the path first, and a file deleted between the shell's glob and the
+    # read used to abort the whole run. With ``--json`` the write happens after
+    # the loop, so document 3 of 500 failing threw away the two already
+    # extracted and wrote nothing at all: the one entry point a user types was
+    # the one that turned an uncertain outcome into a traceback.
     output = []
+    failed = 0
     for path in args.files:
-        result = cascade.extract_file(path)
+        try:
+            result = cascade.extract_file(path)
+        except Exception as exc:
+            failed += 1
+            reason = f"{type(exc).__name__}: {exc}"
+            output.append({"file": str(path), "error": reason})
+            print(f"{Path(path).name}: FAILED — {reason}", file=sys.stderr)
+            continue
         output.append({"file": str(path), **result.to_dict()})
         if args.json:
             continue
@@ -48,13 +64,22 @@ def _cmd_extract(args: argparse.Namespace) -> int:
         # ``autosxtract extract x.pdf > x.txt`` does what one expects. The
         # provenance goes to stderr, where it does not pollute the redirection.
         print(f"{Path(path).name}: {result.provenance}", file=sys.stderr)
-        print(result.text)
+        try:
+            print(result.text)
+        except UnicodeEncodeError:
+            # A terminal that cannot represent the text is not a reason to lose
+            # the rest of the batch; the bytes that survive are still useful.
+            sys.stdout.reconfigure(errors="replace")  # type: ignore[union-attr]
+            print(result.text)
 
     if args.json:
         Path(args.json).write_text(
             json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         print(f"{len(output)} document(s) -> {args.json}", file=sys.stderr)
+    if failed:
+        print(f"{failed} of {len(args.files)} file(s) failed", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -108,6 +133,19 @@ def _cmd_diagnose(_args: argparse.Namespace) -> int:
         suffix = f"  ({'; '.join(notes)})" if notes else ""
         print(f"  [{'x' if ok else ' '}] {name:12} {reason}{suffix}")
     print()
+    # A capability that silently does nothing is worse than one that is off, and
+    # this one was silent: ``fix_orientation=True`` without Tesseract corrected
+    # no page and said so nowhere. It is a line here for the same reason every
+    # engine is — the absence of a tool is a fact about the MACHINE, and the
+    # place to read facts about the machine is this command.
+    from autosxtract.pdf import orientation
+
+    if cfg.fix_orientation:
+        ok, why = orientation.available()
+        print(f"orientation: {'on, ' + why if ok else 'REQUESTED BUT UNAVAILABLE: ' + why}")
+    else:
+        print("orientation: off (Config.fix_orientation)")
+    print()
     print(f"cascade:   {' -> '.join(Cascade().names)}")
     if not engine_order():
         print()
@@ -150,6 +188,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--rec-dir", dest="rec_dir", help="directory of your own recogniser")
     p.add_argument("--no-layers", action="store_true", help="turn line containment off")
     p.add_argument("--routes", action="store_true", help="classify each page's type")
+    p.add_argument(
+        "--no-fix-orientation",
+        dest="no_fix_orientation",
+        action="store_true",
+        help="do not turn sideways pages upright before OCR",
+    )
     p.add_argument(
         "--parallelism",
         type=int,

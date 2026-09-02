@@ -47,6 +47,7 @@ of it, which is the state this repository was in before these files existed.
 | 2 | Privacy scan, whole tree | `ci.yml` job **`privacy`** — required check | the same, anywhere in the tree, on every push and pull request | the check goes red and the merge is blocked |
 | 3 | Privacy scan, commit messages and transient lines | `guardrails.yml` job **`history-scan`** — required check | an identifier or credential appears in a commit *message*, or in a line this branch added and later removed | the check goes red and the merge is blocked |
 | 4 | Privacy scan, the release tree | `release.yml` (`build` job) | the same, on the tree the tag points at | the release aborts before anything reaches PyPI |
+| 4b | The suite, on the tree the TAG points at | `release.yml` (`build` job) | the tests fail on the tagged commit | the release aborts before anything reaches PyPI. The tag ruleset constrains the tag's *name*, not what it points at, so a green `main` says nothing about where somebody tagged |
 | 5 | Lint, format, types, tests on 3.11 / 3.12 / 3.13 | `ci.yml` job **`quality`** — 3 required checks | any of them fails on any supported interpreter | merge blocked |
 | 6 | The suite with a real OCR engine | `ci.yml` job **`with-ocr`** — required check | the engine is missing, inert, or the integration tests fail | merge blocked |
 | 7 | The Apple cascade | `ci.yml` job **`apple`** — required check | Vision's path breaks on macOS | merge blocked |

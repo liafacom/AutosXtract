@@ -131,12 +131,20 @@ def _extract_dictionary(yml: Path, target: Path) -> bool:
 
     try:
         characters = find(yaml.safe_load(yml.read_text(encoding="utf-8")))
+        if not characters:
+            return False
+        # ``str()`` per entry, and INSIDE the try. A character dictionary is
+        # mostly digits, and unquoted digits parse as ints — so the join raised
+        # ``TypeError`` on exactly the input this function will meet most often.
+        # Outside the try that had two consequences: ``download`` propagated a
+        # TypeError instead of its deliberate RuntimeError, and the cleanup that
+        # deletes the weights when the dictionary is missing never ran — leaving
+        # .onnx files on disk that ``complete()`` still calls incomplete, so the
+        # download was silently re-paid on every run.
+        target.write_text("\n".join(str(c) for c in characters), encoding="utf-8")
     except Exception:
         # A YAML from an unexpected version.
         return False
-    if not characters:
-        return False
-    target.write_text("\n".join(characters), encoding="utf-8")
     return True
 
 

@@ -67,6 +67,9 @@ registered engines:
 | `onnx` | 30 | any | `onnx` | a second cheap engine of a different architecture |
 | `tesseract` | 90 | any | `veto` | ~1.4 s/page; **witness only**, it never transcribes |
 
+Per-page costs measured on [these machines](architecture.md#the-machine-every-number-was-measured-on): Vision on the Neural
+Engine, everything else on a 72-core Xeon CPU with no GPU.
+
 Inheriting `OCREngine` is the easy road and gives you the page sweep, the locked
 single load and the witness reading for free. It is a convenience, not the
 requirement: `OCRStep` asks for the **protocol**, so an engine sharing nothing
@@ -95,7 +98,7 @@ def read_document(self, pdf_bytes: bytes, *, max_pages: int = 3,
   reason is not decoration — it reaches `autosxtract diagnose` and the
   provenance, and it is how somebody finds out that their scanned PDF came out
   empty because `pyobjc` is broken. See
-  [ADR 0003](adr/0003-a-missing-engine-is-never-an-exception.md).
+  [ADR 0003](adr/index.md#0003-a-missing-engine-is-never-an-exception).
 - `transcribe()` **preserves page order.** Reassembling in completion order
   scrambles the document and nothing downstream can tell that it did. If you
   parallelise, use `map`, not `as_completed`.
@@ -156,13 +159,18 @@ def run(self, ctx: DocumentContext) -> StepResult: ...
   *enters the contest*. A refused step may have produced the best reading there
   is. Returning `None` for a refusal left 682 documents with zero characters
   while the PDF had a text layer
-  ([ADR 0004](adr/0004-refused-text-still-competes.md)).
+  ([ADR 0004](adr/index.md#0004-refused-text-still-competes)).
 - **Fill `Attempt.reason` with a sentence a human can act on.** `"refused"` is
   not a reason. `"only 4 useful words outside the stamp"` is.
 - **Never raise for an expected condition.** A network failure, a missing
   binary, an unreadable file: all of those are refused attempts with a reason.
 - **Do not reach for evidence you did not gather.** `DocumentContext`
   deliberately withholds `readings` and `texts`; see below.
+- **Report what was done to the page, not only what you read from it.**
+  `ctx.orientation` says whether the page was turned upright before your engine
+  saw it, or why it could not be. Copying it into your details is what stops a
+  correction that ran and one that silently did not from leaving identical
+  evidence.
 
 **What is optional.** A class attribute `expensive = True` makes the cascade run
 the [five vetoes](gates.md#the-five-vetoes) before you and submit your output to
@@ -206,7 +214,7 @@ produces.
 
 **Why it is injectable.** So a step can be driven over invented pixels without
 PyMuPDF opening anything — and PyMuPDF is precisely what cannot be run freely
-([ADR 0006](adr/0006-pymupdf-is-serialised.md)).
+([ADR 0006](adr/index.md#0006-pymupdf-is-serialised)).
 
 ```python
 from autosxtract import Config
@@ -443,7 +451,7 @@ def __call__(self, text: str, profile: PageProfile, *,
 There is **one** acceptance criterion in this pipeline: whoever decides the
 current step solved it and whoever decides the next one is worth paying for must
 ask the same question with the same code
-([ADR 0002](adr/0002-one-acceptance-criterion.md)).
+([ADR 0002](adr/index.md#0002-one-acceptance-criterion)).
 
 So a *replacement* gate is a legitimate thing to inject; a **second acceptance
 gate alongside the first is not**. Note that `quality.rejection`'s replacement

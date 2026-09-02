@@ -35,8 +35,18 @@ generic rather than one regex per format — a real archive holds tax IDs, case 
 numbers and legacy formats (``001.06.012345-6``, groups of 3/2/6/1), and enumerating formats
 misses precisely what has not been seen yet. The filter is the digit count, which lives in the
 code as a threshold.
+
+Each digit group is BOUNDED. Unbounded ``\d+`` is quadratic on a contiguous run of digits:
+it consumes the whole run, then backtracks one character at a time looking for a separator,
+from every start position. Measured on one unbroken run: 4,000 digits 0.33 s, 8,000 digits
+0.83 s, 16,000 digits 3.5 s. ``quality/anchors.py`` runs this over the whole document text
+with no length cap, and the replacement gate calls it twice per comparison — so a page whose
+text layer is one long numeric run (a mis-extracted barcode, a broken ``ToUnicode`` map, the
+sibling of the case ``metrics.glyph_index`` documents) stalls the gate for seconds. The
+ceiling of 20 changes nothing that matches: the code's floor is 8 digits and no real
+identifier carries a 20-digit group.
 '''
-pattern = '\d+(?:[./-]\d+){2,}'
+pattern = '\d{1,20}(?:[./-]\d{1,20}){2,}'
 
 [anchors.alphanumeric]
 why = '''

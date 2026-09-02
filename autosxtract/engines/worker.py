@@ -205,9 +205,17 @@ class VisionWorkerEngine(OCREngine):
 
         A worker answering ``linhas`` without polygons still transcribes fine;
         what is lost is the containment layers, and the reason shows up in
-        ``diagnose`` rather than as silence. Confidence arrives on the 0-100
-        scale and ``Line`` wants 0-1, so it is divided here — forgetting that
-        makes every line look perfect and the layer thresholds inert.
+        ``diagnose`` rather than as silence.
+
+        Confidence arrives on the **0-100** scale — the same one
+        ``confianca_media`` uses in ``transcribe_page``, and the same one
+        ``Transcription.mean_confidence`` carries — and ``Line`` wants 0-1, so it
+        is divided here. This is the one line in the file that has to be right:
+        without the division every line scores 40 to 95 on a 0-1 scale, so
+        nothing is ever ``illegible`` or ``suspect``, ``_looks_like_scribble``
+        never fires, the structural signature rule goes dead, and Layer 2 can
+        never beat an original that already "scores" 95. The engine keeps
+        working and every threshold below it stops meaning anything.
         """
         body = self._request(image)
         rows = body.get("linhas")
@@ -223,7 +231,7 @@ class VisionWorkerEngine(OCREngine):
             lines.append(
                 Line(
                     text=text,
-                    score=float(row.get("confianca") or 0.0),
+                    score=float(row.get("confianca") or 0.0) / 100.0,
                     poly=_polygon(row.get("poligono")),
                 )
             )

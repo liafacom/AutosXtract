@@ -146,3 +146,96 @@ def test_a_single_queue_ignores_the_requested_parallelism():
         ThreadPoolExecutor.__init__ = original
     # No pool was opened: with an effective value of 1 the sweep is sequential.
     assert created == []
+
+
+# ── the page index has to line up with the images (CLAUDE.md §15) ────────
+
+
+class _GeometryEngine(OCREngine):
+    """Answers in DETAIL, and raises on whichever page it is told to."""
+
+    name = "geometry"
+
+    def __init__(self, bad: bytes = b"") -> None:
+        super().__init__()
+        self.bad = bad
+
+    def available(self):
+        return True, "fake"
+
+    def read_page(self, image: bytes):
+        from autosxtract.types import Line, Page
+
+        if image == self.bad:
+            raise RuntimeError("refused the image")
+        return Page(lines=[Line(text=image.decode(), score=0.9)], width=100.0, height=100.0)
+
+    def transcribe_page(self, image: bytes) -> tuple[str, float]:
+        raise AssertionError("read_page answered; the simple contract must not be reached")
+
+
+def test_detailed_pages_are_dropped_when_one_page_raised():
+    """``Transcription.pages`` is filled only when EVERY page answered in detail.
+
+    The comparison used to be against the pages that ANSWERED, not against the
+    pages that were SENT. A page that raises is counted in neither, so the
+    equality survived the hole and the list came back compacted: three entries
+    for a five-page document. ``layers.apply`` pairs that list positionally
+    against the images, so page 3's line geometry was cropped out of page 2's
+    image — the signature detector ran on the wrong sheet and Layer 2 could
+    substitute text read from the wrong page into the output.
+
+    Empty is the honest answer: without geometry the layers are skipped and the
+    reason reaches the provenance.
+    """
+    t = _GeometryEngine(bad=b"p2").transcribe([b"p1", b"p2", b"p3"], parallelism=1)
+    assert t is not None
+    assert (t.pages_sent, t.pages_answered) == (3, 2)
+    assert t.pages == [], "a compacted page list is worse than none"
+
+
+def test_detailed_pages_survive_when_every_page_answered():
+    """The guard must not throw away a list that IS aligned."""
+    t = _GeometryEngine().transcribe([b"p1", b"p2", b"p3"], parallelism=1)
+    assert t is not None
+    assert [p.text for p in t.pages] == ["p1", "p2", "p3"]
+
+
+def test_page_texts_keep_the_slot_of_a_page_that_failed():
+    """``text`` cannot be split back into pages; ``page_texts`` can be indexed.
+
+    A page that failed, and a page that legitimately read nothing, both leave no
+    trace in the joined text — so per-page routing cannot use it to put an OCR'd
+    page back in its place among the native ones. One slot per page SENT is what
+    makes that possible, and a dropped slot is how a mixed PDF silently comes
+    back with the attachment and none of the pages around it.
+    """
+    t = _GeometryEngine(bad=b"p2").transcribe([b"p1", b"p2", b"p3"], parallelism=1)
+    assert t is not None
+    assert t.page_texts == ["p1", "", "p3"]
+    assert len(t.page_texts) == t.pages_sent
+
+
+def test_page_texts_keep_the_slot_of_a_page_that_read_nothing():
+    """A page that ANSWERED and was blank keeps its slot too.
+
+    This is the realistic case — a blank sheet in the middle of a mixed filing —
+    and it takes a different branch from the raising one: the page is counted in
+    ``pages_answered`` and contributes nothing to ``text``. Dropping its slot
+    here shifts every later page by one, and per-page routing then files the
+    OCR'd pages under the wrong page numbers.
+    """
+
+    class Blanks(OCREngine):
+        name = "blanks"
+
+        def available(self):
+            return True, "fake"
+
+        def transcribe_page(self, image: bytes) -> tuple[str, float]:
+            return ("" if image == b"p2" else image.decode()), 90.0
+
+    t = Blanks().transcribe([b"p1", b"p2", b"p3"], parallelism=1)
+    assert t is not None
+    assert t.pages_answered == 3
+    assert t.page_texts == ["p1", "", "p3"]

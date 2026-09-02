@@ -49,24 +49,33 @@ _INK_THRESHOLD = 200
 
 
 def _sample(pdf_bytes: bytes):
-    """A greyscale pixmap of the first page, or ``None`` if unreadable."""
-    try:
-        pymupdf = mupdf()
-    except ImportError:
-        return None
-    try:
-        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    except Exception:
-        # Optional signal: it never brings the cascade down.
-        return None
-    try:
-        if not len(doc):
+    """A greyscale pixmap of the first page, or ``None`` if unreadable.
+
+    Both callers already hold ``pdf_lock`` — they have to, because they read
+    ``pix.samples`` and the pixmap must not outlive the guarded region — and it
+    is taken here as well. The lock is an ``RLock``, so the second acquisition
+    costs nothing, and the point is that the guarantee becomes LOCAL: a third
+    caller written next month cannot forget it, and §6 stops depending on every
+    caller of a private helper remembering the rule.
+    """
+    with pdf_lock():
+        try:
+            pymupdf = mupdf()
+        except ImportError:
             return None
-        return doc[0].get_pixmap(dpi=_SAMPLE_DPI, colorspace=pymupdf.csGRAY)
-    except Exception:
-        return None
-    finally:
-        close(doc)
+        try:
+            doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        except Exception:
+            # Optional signal: it never brings the cascade down.
+            return None
+        try:
+            if not len(doc):
+                return None
+            return doc[0].get_pixmap(dpi=_SAMPLE_DPI, colorspace=pymupdf.csGRAY)
+        except Exception:
+            return None
+        finally:
+            close(doc)
 
 
 def is_photograph(pdf_bytes: bytes) -> bool:

@@ -88,7 +88,7 @@ measurement with the case number it was made on looks harmless and is not:
 this library's own examples, with a valid check digit. The examples use numbers
 with an **invalid** check digit on purpose — that way the scanner stays quiet and
 nobody has to decide case by case whether a number exists. See
-[ADR 0011](adr/0011-no-real-document-in-the-repository.md).
+[ADR 0011](adr/index.md#0011-no-real-document-in-the-repository).
 
 The scanner runs as the **first** pre-commit hook, before the style ones, and on
 every CI push. The order is deliberate: a commit blocked on formatting costs

@@ -22,20 +22,26 @@ from __future__ import annotations
 import pytest
 
 
-def _grey_image(width: int = 400, height: int = 300) -> bytes:
+def _grey_image(width: int = 400, height: int = 300, *, seed: int = 0) -> bytes:
     """Any image, so it becomes an image block inside the PDF.
 
     It has to be a real image (a ``type == 1`` block), not a vector rectangle:
     the coverage gate asks about a large image in a region with no text, and a
     vector drawing is not an image — that is what made the first version of
     these tests pass by accident.
+
+    ``seed`` shifts the bars so two pages can be told apart by their pixels. A
+    multi-page fixture built from the same image renders identical pages, and a
+    test that checks page ORDER over identical pages passes whatever the order
+    is — which is how the order test came to prove nothing.
     """
     import pymupdf
 
     pix = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, width, height))
     pix.set_rect(pix.irect, (210,))
-    for y in range(20, height - 20, 24):
-        pix.set_rect(pymupdf.IRect(20, y, width - 20, y + 6), (40,))
+    offset = (seed * 7) % 24
+    for y in range(20 + offset, height - 20, 24):
+        pix.set_rect(pymupdf.IRect(20 + offset, y, width - 20, y + 6), (40,))
     return pix.tobytes("png")
 
 
@@ -107,6 +113,65 @@ def pdf_scanned() -> bytes:
     accepting anything for want of an alternative.
     """
     return _pdf([""], with_image=True)
+
+
+@pytest.fixture
+def pdf_scanned_multipage() -> bytes:
+    """Four pages with ink and no text layer.
+
+    Every other fixture here is one or two pages, which quietly made the
+    multi-page promises untestable: ``transcribe`` takes the sequential branch
+    below two pages, so a test parametrised over ``parallelism`` proved nothing
+    about the parallel path, and page ORDER cannot be wrong in a document with
+    one page.
+
+    Each page carries a DIFFERENT image, so the rendered bytes differ page by
+    page. Four copies of one image render four identical pages, and a test that
+    checks the order of identical things is satisfied by every order.
+    """
+    import pymupdf
+
+    doc = pymupdf.open()
+    for index in range(4):
+        page = doc.new_page()
+        page.insert_image(pymupdf.Rect(60, 400, 540, 740), stream=_grey_image(seed=index + 1))
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+@pytest.fixture
+def pdf_mixed() -> bytes:
+    """Native text pages AROUND a scanned one — the per-page routing case.
+
+    Pages 0, 1 and 3 carry a text layer; page 2 carries only ink. Routing sends
+    page 2 alone to OCR, and what comes back has to go BACK INTO PLACE: returning
+    only the OCR'd page drops three pages of text, and appending it to the native
+    text puts the attachment at the end of a document where it belongs in the
+    middle.
+    """
+    body = (
+        "Nos autos do processo 0001234-56.2020.8.12.0001 o requerente vem "
+        "respeitosamente expor e requerer, na forma da decisao anterior, a "
+        "juntada dos documentos que seguem em anexo neste mesmo arquivo, cujo "
+        "teor integra o pedido para todos os efeitos de direito, uma vez que a "
+        "diligencia anterior restou infrutifera conforme certidao nos autos."
+    )
+    import pymupdf
+
+    doc = pymupdf.open()
+    image = _grey_image()
+    for index in range(4):
+        page = doc.new_page()
+        if index == 2:
+            page.insert_image(pymupdf.Rect(60, 400, 540, 740), stream=image)
+        else:
+            page.insert_textbox(
+                pymupdf.Rect(50, 50, 550, 380), f"Pagina {index + 1}. {body}", fontsize=11
+            )
+    data = doc.tobytes()
+    doc.close()
+    return data
 
 
 @pytest.fixture

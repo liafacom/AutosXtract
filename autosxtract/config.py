@@ -154,11 +154,18 @@ class Config(BaseModel):
         ),
     )
     fix_orientation: bool = Field(
-        default=False,
+        default=True,
         description=(
-            "Detect and correct a sideways page before OCR (requires the "
-            "[veto] extra). Off by default: it costs an OSD pass per page and "
-            "only pays off on a crooked archive."
+            "Detect and correct a sideways page BEFORE OCR, with Tesseract's "
+            "OSD (needs the [veto] extra; without it the correction is skipped "
+            "and the reason goes to the provenance and to diagnose). On by "
+            "default because a rotated page is read badly by every engine, and "
+            "everything downstream then judges a bad reading caused by an input "
+            "defect it cannot see. UNMEASURED on this project's archive: the "
+            "cost is one OSD pass per rasterised page, so a document resolved "
+            "by the native text layer pays nothing, and no number here yet says "
+            "what it buys. Measure with scripts/compare_engines.py before "
+            "relying on it, and turn it off if your scans are known upright."
         ),
     )
 

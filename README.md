@@ -15,12 +15,16 @@ r = Cascade().extract_file("document.pdf")
 print(r.text)
 ```
 
-One command and one class, identical on macOS, Linux and Windows — the OCR
-engine arrives already chosen by the machine, with no extra to memorise.
+One command and one class, identical on macOS and Linux — the OCR engine arrives
+already chosen by the machine, with no extra to memorise. Windows installs and
+should behave like Linux (the same PP-OCRv6 step, no Vision), but no CI runner
+exercises it and the PyPI classifiers do not claim it: treat it as unverified
+rather than supported.
 
-> Extraction **does no networking**. No worker, no tunnel, no third-party
-> service. The one connection in the package is the one-off download of the
-> PP-OCRv6 weights, unnecessary once they are on disk.
+> Extraction **sends no document anywhere**. No worker, no tunnel, no
+> third-party service. The only traffic is model weights on first load — the
+> PP-OCRv6 download, and Hugging Face for the heavier PaddleOCR and onnxtr
+> backends — unnecessary once they are on disk.
 
 📖 **[Full documentation](docs/index.md)** · [Getting started](docs/getting-started.md) ·
 [Architecture](docs/architecture.md) · [Decision records](docs/adr/index.md)
@@ -37,13 +41,28 @@ while a single model would charge ~400 ms on pages with no OCR to do.
 ```
     STEP                        COST/DOC   RESOLVES   QUALITY (60 audited docs)
     -------------------------------------------------------------------------------
-    0. unwrap                    ~0.1 ms      —       RTF / BRy / PKCS#7
     1. native (PyMuPDF)          13.4 ms     31%      native text, exact
     2. Apple Vision             ~400 ms      64%      words 92%  anchors 100%
        or PP-OCRv6 tiny         ~500 ms               (off Apple hardware)
-    3. vetoes + screening         ~1 s       the rest
-    4. remote steps            4 to 47 s     opt-in   only if you instantiate them
+    3. agreement + consensus       ~0 ms    the rest  inside Cascade.extract
+       + the contest                                 always run, not steps
+    -- opt-in: you pass them in steps= ---------------------------------------
+       unwrap                   ~0.1 ms      —       RTF / BRy / PKCS#7
+       screening                                     identity documents
+       remote / docling       4 to 47 s              expensive = True, which is
+                                                     what arms the five vetoes
+                                                     and the replacement gate
 ```
+
+**On what hardware.** Every number above is CPU, on 2 × Intel Xeon E5-2699 v3
+@ 2.30 GHz — 36 physical cores, 72 logical, 125 GiB, Debian 13, x86_64, bare
+metal — with **no discrete GPU and no CUDA path in the library at all**. The one
+exception is Apple Vision, measured on a MacBook Air M5, which runs on the
+Neural Engine rather than the CPU; that single hardware queue is why its
+~2.5 pages/s ceiling does not move with threads. A GPU behind the single model would narrow
+`6.2 min against 4.44` and would not touch the reason the cascade exists: 31% of
+documents need no model at all, and nothing makes an existing text layer cheaper
+than 13.4 ms. [The full measurement environment →](docs/architecture.md#the-machine-every-number-was-measured-on)
 
 A Mac runs `native → vision → paddle`; everywhere else it is `native → paddle`.
 PP-OCRv6 is not Vision's substitute on a Mac — it is the step below it, and the
@@ -57,11 +76,13 @@ autosxtract diagnose
 ```
 
 ```
-autosxtract 0.5.0
+autosxtract 0.6.0
 machine    Linux (x86_64)
 engines:
   [ ] vision       vision requires Darwin  (single queue: ignores threads)
   [x] paddle       PP-OCRv6 tiny
+  [ ] tesseract    tesseract unavailable: No module named 'pytesseract'
+orientation: REQUESTED BUT UNAVAILABLE: pytesseract is not installed
 cascade:   native -> paddle
 ```
 
@@ -191,8 +212,9 @@ So nobody spends time again on what has already been refuted.
 | grey JPEG at 100 DPI | 85.5% anchor preservation; it loses dates and tax numbers |
 | deduplicating pages | only 2.0% repeat (33 of 1,675) |
 
-The methodological lesson is worth more than any number here: **an isolated
-measurement has already lied in this project.** What decides is the cascade's
+Same hardware as above — CPU, no GPU — so read these as ratios rather than as
+absolutes to reproduce. The methodological lesson is worth more than any number
+here: **an isolated measurement has already lied in this project.** What decides is the cascade's
 behaviour, not one engine's output — `scripts/compare_engines.py` measures both.
 
 ## Known limits

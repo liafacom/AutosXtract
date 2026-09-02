@@ -88,7 +88,7 @@ jobs:
         if: steps.detect.outputs.mkdocs == 'true'
         run: mkdocs build --strict --site-dir site
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: steps.detect.outputs.mkdocs == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           path: site
@@ -115,6 +115,6 @@ jobs:
       # Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
       # With the source left on "Deploy from a branch" this step fails with a
       # message that does not obviously say so.
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - id: deployment
         uses: actions/deploy-pages@v4

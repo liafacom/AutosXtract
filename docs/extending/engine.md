@@ -39,6 +39,9 @@ comparative measurement on the same 60-document sample:
 | 20 | PP-OCRv6 tiny | ~500 ms/page, the off-Apple candidate |
 | 90 | Tesseract | ~1.4 s/page, veto only — it does not persist text |
 
+Per-page costs measured on [these machines](../architecture.md#the-machine-every-number-was-measured-on): Vision on the Neural
+Engine, everything else on a 72-core Xeon CPU with no GPU.
+
 `extra` is the name of the pip extra that installs your backend. It is quoted
 back to the user in `available()`'s reason and in `autosxtract diagnose`, which
 is the difference between *"engine unavailable"* and *"install with
@@ -163,14 +166,14 @@ Across 60 audited documents, engine confidence did not separate a good reading
 from an unsafe one — **there was an unsafe document at confidence 100.** It enters
 only as a floor against degenerate output; the [gate](../gates.md) decides. Do
 not build logic on your own confidence, and do not suppress low-confidence lines
-before returning them. See [ADR 0007](../adr/0007-confidence-does-not-arbitrate-quality.md).
+before returning them. See [ADR 0007](../adr/index.md#0007-confidence-does-not-arbitrate-quality).
 
 ### A missing engine is never an exception
 
 `available()` must never raise. Anything that can fail belongs in `_load`, whose
 exception message becomes the reason. The absence of a tool is not evidence about
 the document — treating "I have no OCR" as "the page is empty" switches the
-pipeline off in silence. See [ADR 0003](../adr/0003-a-missing-engine-is-never-an-exception.md).
+pipeline off in silence. See [ADR 0003](../adr/index.md#0003-a-missing-engine-is-never-an-exception).
 
 ### Two confidence scales, and mixing them is silent
 

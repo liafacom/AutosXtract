@@ -169,10 +169,18 @@ deployment, the CodeQL upload and the PyPI upload ask for more, and only in the
 job that needs it.
 
 A pull request that introduces a dependency with a known advisory, or one whose
-licence is outside the allow list, is refused by the `dependency-review` job
-before it can be merged. `CodeQL (python)` analyses the package on every pull
-request and weekly, because a query written next month can find a defect in code
-that merged today.
+licence is outside the allow list, is examined by the `dependency-review` job.
+**That job is currently reported, not required**: the repository's dependency
+graph is off, so it fails on configuration rather than on the change, and it was
+stood down as a required check rather than left to block every merge for a
+reason no contributor could act on. Until the graph is enabled and the check is
+put back in `.github/rulesets/main.json`, a new dependency is reviewed by a
+person, not by a gate — which matters most for the licence half, where the
+allow list and the AGPL exemption for pymupdf live in `guardrails.yml`.
+`.github/GUARDRAILS.md` §3 tracks the stand-down and what ends it.
+
+`CodeQL (python)` analyses the package on every pull request and weekly, because
+a query written next month can find a defect in code that merged today.
 
 ### Where the rest of it is written down
 

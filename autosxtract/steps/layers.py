@@ -173,8 +173,14 @@ def apply(
     config: Config,
     *,
     lexicon: LexiconLike | None = None,
-) -> tuple[str, dict]:
-    """Run the layers over every page and return ``(text, report)``.
+) -> tuple[str, dict, list[str]]:
+    """Run the layers over every page and return ``(text, report, page_texts)``.
+
+    ``page_texts`` carries one entry per page **contained**, in order, with an
+    empty string where the page came back with nothing. The joined ``text``
+    cannot be split back into pages — a blank page leaves no separator behind,
+    and a page's own text may contain one — so the caller that has to put a page
+    back in its place in the document takes the aligned list instead.
 
     The report is aggregated — the counts add up and the trusted fraction is a
     weighted mean — because the decision to escalate belongs to the document,
@@ -196,6 +202,9 @@ def apply(
     detector = _detector(config)
 
     parts: list[str] = []
+    # Aligned with ``transcription.pages``: ``parts`` drops the blank ones, this
+    # one keeps their slot.
+    aligned: list[str] = []
     counts: dict[str, int] = {
         "lines_total": 0,
         "lines_illegible": 0,
@@ -240,6 +249,9 @@ def apply(
         escalate = escalate or containment.needs_escalation
         if containment.text.strip():
             parts.append(containment.text)
+            aligned.append(containment.text)
+        else:
+            aligned.append("")
 
     # The counts add up; the trusted fraction is a per-page mean; the action
     # belongs to the document, not the sheet.
@@ -251,7 +263,7 @@ def apply(
     )
     if routes:
         final["routes"] = routes
-    return "\n\n".join(parts), final
+    return "\n\n".join(parts), final, aligned
 
 
 def _detector(config):

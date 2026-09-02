@@ -44,7 +44,7 @@ worth paying for ask the same question, with the same code. Two competing
 notions of "adequate extraction" in one pipeline was the defect this function
 exists to avoid repeating: the step approved itself by one criterion and the
 cascade refused it by another. See
-[ADR 0002](adr/0002-one-acceptance-criterion.md).
+[ADR 0002](adr/index.md#0002-one-acceptance-criterion).
 
 It asks four questions in this order, and returns a `Verdict(escalate, reason)`:
 
@@ -167,7 +167,16 @@ ending with zero characters.
 ## The five vetoes
 
 `Config.expensive_step_vetoes`, default on. They run **before** any step that
-declares `expensive = True`, and the order is by **rising cost**:
+declares `expensive = True`, and the order is by **rising cost**.
+
+!!! note "No default step is expensive"
+
+    `Cascade()` assembles `NativeStep` and the `OCRStep`s, and **none of them
+    sets `expensive = True`** — so on the default cascade neither these five
+    vetoes nor the [replacement gate](#the-replacement-gate) ever fire, however
+    on `Config` they are. They arm themselves the moment you add a step that
+    declares it: `DoclingLocalStep`, `DoclingStep` or `VLMStep`. The two gates
+    that always run are [agreement](#agreement) and [consensus](#consensus).
 
 | # | veto | question | cost | why |
 |---|---|---|---|---|
@@ -197,7 +206,7 @@ Three things about them have already cost time:
 
     It skips vetoes 3 to 5. It never becomes "there is no text". The absence of
     a tool is not evidence about the document
-    ([ADR 0003](adr/0003-a-missing-engine-is-never-an-exception.md)) — and a veto
+    ([ADR 0003](adr/index.md#0003-a-missing-engine-is-never-an-exception)) — and a veto
     that did not run shows in the provenance, because it is an expensive step
     paid where it need not have been.
 
@@ -241,7 +250,7 @@ So the gate runs five checks, in this order:
 Letting a candidate refused here compete would **cancel the gate**, because
 volume is usually on the wrong side: the corrupted text is precisely the longest
 one. That is the entire difference from the acceptance gate
-([ADR 0005](adr/0005-the-replacement-gate-discards.md)).
+([ADR 0005](adr/index.md#0005-the-replacement-gate-discards)).
 
 ### The exemptions, and why they are not leniency
 
@@ -271,6 +280,9 @@ surviving text is the 250-to-600-character stamp, and the real content is often
 ---
 
 ## The containment layers
+
+The per-layer costs below were measured on [the Linux machine](architecture.md#the-machine-every-number-was-measured-on)
+— a 72-core Xeon, no GPU, PP-OCRv6 on the CPU.
 
 `Config.layers`, default on. Not a gate — a repair pass — but it is where the
 gates' numbers come from on a scanned page, so it belongs here.

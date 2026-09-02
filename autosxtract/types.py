@@ -103,6 +103,17 @@ class Transcription:
     #: containment layers; empty means "this engine does not tell", never "the
     #: page has no lines".
     pages: list[Page] = field(default_factory=list)
+    #: One entry per page **sent**, in the order they were sent, with an empty
+    #: string where the page raised or read nothing.
+    #:
+    #: ``text`` joins only the pages that produced something, so it cannot be
+    #: split back into pages: a page that came back blank leaves no trace in it,
+    #: and a page's own text may contain the blank line the join uses. Whoever
+    #: has to put a page back in its place in the document — the per-page
+    #: routing of ``OCRStep`` — needs the alignment, not the concatenation.
+    #: Dropping a page from the middle here is how a mixed PDF silently returns
+    #: the scanned attachment without the pages that surround it.
+    page_texts: list[str] = field(default_factory=list)
     #: Why pages did not come back, when they RAISED rather than read nothing.
     #:
     #: The distinction is the whole point: a page the engine read as blank and a
