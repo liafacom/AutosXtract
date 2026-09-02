@@ -157,7 +157,7 @@ class Cascade:
 
         for step in self.steps:
             if getattr(step, "expensive", False):
-                veto = self._veto(ctx)
+                veto = self._veto(ctx, attempts)
                 if veto is not None:
                     attempts.append(veto)
                     continue
@@ -292,7 +292,7 @@ class Cascade:
         )
 
     # ── expensive-step gates ─────────────────────────────────────────────
-    def _veto(self, ctx: Context) -> Attempt | None:
+    def _veto(self, ctx: Context, attempts: list[Attempt]) -> Attempt | None:
         """The five vetoes that run before a step declared expensive.
 
         The witness for vetoes 3 to 5 is a local engine **of another
@@ -300,19 +300,50 @@ class Cascade:
         family is not independent evidence. With none available the three are
         skipped — and that shows in the provenance, because a veto that does not
         run is an expensive step paid where it need not have been.
+
+        Two things this method has to get right and once did not.
+
+        The witness is passed as a **callable**, so the two pixel vetoes at 40
+        DPI run first, as the documented cost order says. Evaluating it as an
+        argument ran a full local OCR — with its 300 DPI recovery track — on
+        exactly the blank sheets ``no_ink`` rejects for free.
+
+        And when there is no witness, that fact is APPENDED to the provenance
+        instead of vanishing. Returning a bare ``None`` made a run with Tesseract
+        missing from the PATH byte-for-byte identical to one where the witness
+        ran and approved: three vetoes silently never fired, every escalated
+        document paid the expensive step, and nothing in the record said why.
         """
         if not self.config.expensive_step_vetoes:
             return None
         current = ctx.best_text()
+        note: list[str] = []
+
+        def witness() -> LocalReading | None:
+            reading, reason = self._witness(ctx)
+            if reading is None and reason:
+                note.append(reason)
+            return reading
+
         veto = assess_vetoes(
             ctx.pdf_bytes,
             current,
-            local_reading=self._witness(ctx),
+            local_reading=witness,
             min_useful_words=self.config.min_useful_words,
             min_reliable_words=self.config.min_reliable_words,
             min_agreement=self.config.min_agreement,
             stamps=self.config.stamp_patterns(),
         )
+        if note:
+            attempts.append(
+                Attempt(
+                    "veto:witness",
+                    False,
+                    f"vetoes 3-5 skipped: {note[0]}",
+                    len(current),
+                    0.0,
+                )
+            )
         if veto is None:
             return None
         return Attempt(
@@ -324,32 +355,41 @@ class Cascade:
             {"evidence": veto.evidence} if veto.evidence else {},
         )
 
-    def _witness(self, ctx: Context) -> LocalReading | None:
-        """The local reading that supports vetoes 3 to 5, or ``None``.
+    def _witness(self, ctx: Context) -> tuple[LocalReading | None, str]:
+        """The local reading that supports vetoes 3 to 5, and why it is missing.
 
-        ``None`` means "I don't know" and never "there is no text": the absence
-        of a tool is not evidence about the document.
+        Returns ``(reading, reason)``. A ``None`` reading means "I don't know"
+        and never "there is no text": the absence of a tool is not evidence about
+        the document. The reason is what keeps that absence auditable — degrading
+        without breaking is right, degrading without warning is not.
         """
         name = self.config.veto_engine
         if not name:
-            return None
+            # ``veto_engine=None`` is a documented off switch, not a degradation.
+            # Announcing a deliberate configuration on every document of every
+            # run is how a provenance line stops being read at all — and the
+            # note exists precisely to be read.
+            return None, ""
         engine: Engine
         try:
             engine = engines.get(name, **(self.config.engine_options or {}).get(name, {}))
-        except Exception:
-            # A missing veto engine.
-            return None
-        if not engine.available()[0]:
-            return None
+        except Exception as exc:
+            return None, f"veto engine {name!r} could not be built: {exc}"[:160]
+        ok, reason = engine.available()
+        if not ok:
+            return None, f"veto engine {name!r} unavailable: {reason}"[:160]
         try:
-            return engine.read_document(
+            reading = engine.read_document(
                 ctx.pdf_bytes,
                 max_pages=self.config.veto_max_pages,
                 min_reliable_words=self.config.min_reliable_words,
             )
-        except Exception:
-            # The witness never brings the cascade down.
-            return None
+        except Exception as exc:
+            # The witness never brings the cascade down — but it says so.
+            return None, f"veto engine {name!r} failed to read: {exc}"[:160]
+        if reading is None:
+            return None, f"veto engine {name!r} returned no reading"
+        return reading, ""
 
     def _reject(self, ctx: Context, result: StepResult, previous: str) -> StepResult:
         """Decide whether the expensive step's text may REPLACE what exists.

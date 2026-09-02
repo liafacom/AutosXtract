@@ -86,8 +86,17 @@ def _reading_key(index: int, item: dict[str, Any]) -> tuple:
         return (10**6, 2, 0.0, 0.0, index)
 
     bbox = prov.get("bbox") or {}
-    page = prov.get("page_no") or 0
     after = 1 if (item.get("label") in _FRAME or _is_sideways(bbox)) else 0
+    # ``page_no`` is the PRIMARY sort key and it came off the wire unguarded
+    # while ``t``/``l`` were defended — so one item with a string page number
+    # made ``sorted`` raise ``TypeError`` comparing str with int. ``DoclingStep``
+    # caught it and reported the whole conversion as failed, which is the worst
+    # place to lose it: this module exists BECAUSE the markdown came back empty
+    # and the structured document is the only copy of the text.
+    try:
+        page = int(prov.get("page_no") or 0)
+    except (TypeError, ValueError):
+        page = 0
     try:
         top = -float(bbox.get("t", 0.0))
         left = float(bbox.get("l", 0.0))
@@ -132,7 +141,12 @@ def text_by_page(json_content: dict[str, Any] | None) -> dict[int, str]:
     by_page: dict[int, list[str]] = {}
     for _, item in _ordered_items(json_content):
         prov = _first_prov(item) or {}
-        page = int(prov.get("page_no") or 1)
+        # Same guard as ``_reading_key``: a page number the server typed as a
+        # string must not cost the whole reassembly (see the note there).
+        try:
+            page = int(prov.get("page_no") or 1)
+        except (TypeError, ValueError):
+            page = 1
         by_page.setdefault(page, []).append(item["text"].strip())
     return {p: "\n".join(lines) for p, lines in by_page.items()}
 

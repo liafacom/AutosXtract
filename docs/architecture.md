@@ -55,19 +55,35 @@ There is one more property worth naming, because it is the reason the rule pays
 for itself: `quality/` does no I/O and takes no configuration object, only
 numbers. So the same function can be called from inside a step (*did I solve
 it?*) and from the cascade (*is the next step worth paying for?*) at no cost —
-which is the mechanism behind [one acceptance criterion](adr/0002-one-acceptance-criterion.md).
+which is the mechanism behind [one acceptance criterion](adr/index.md#0002-one-acceptance-criterion).
 
 ## The cascade, per platform
 
 ```mermaid
 flowchart LR
     subgraph macOS
-        A0["unwrap"] --> A1["native<br/>13.4 ms"] --> A2["vision<br/>~400 ms"] --> A3["paddle<br/>~500 ms"]
+        A1["native<br/>13.4 ms"] --> A2["vision<br/>~400 ms"] --> A3["paddle<br/>~500 ms"]
     end
     subgraph Linux / Windows
-        B0["unwrap"] --> B1["native<br/>13.4 ms"] --> B2["paddle<br/>~500 ms"]
+        B1["native<br/>13.4 ms"] --> B2["paddle<br/>~500 ms"]
     end
 ```
+
+Before any of those steps sees a pixel, the page is turned upright. The
+orientation fix lives in the **render cache** (`steps/base.py`), not in a step,
+because it is a property of the input rather than an attempt at extraction: a
+sideways page is read badly by every engine, and the gates downstream would
+otherwise measure an input defect they cannot see. It costs an OSD pass per
+**rasterised** page, so a document resolved by the native text layer pays
+nothing, and the availability check runs once per document rather than once per
+page. Without the `[veto]` extra the correction is skipped and says so in the
+provenance and in `diagnose` — it is never a silent no-op.
+
+That is literally what `Cascade().names` returns — `['native', 'paddle']` on
+Linux, `['native', 'vision', 'paddle']` on a Mac. `UnwrapStep` and
+`ScreeningStep` exist and are exported from the package root, but **they are not
+assembled by default**: you pass them in `steps=`. The gates below are not steps
+at all — they run inside `Cascade.extract` and cannot be left out.
 
 Nothing about the cascade changes with the platform except that one missing
 layer — same steps, same gates, same contest. PP-OCRv6 is **not** Vision's
@@ -76,7 +92,7 @@ the [agreement gate](gates.md#agreement) needs in order to fire at all.
 
 | step | cost per document | resolves | notes |
 |---|---|---|---|
-| `unwrap` | ~0.1 ms | — | RTF, BRy envelope, PKCS#7. Almost never fires; on a real PDF it costs reading 16 bytes. It exists because **128 documents of a real archive arrive as `.pdf` while being something else**, and PyMuPDF raises `Failed to open stream` on them. No OCR recovers those — there is no image, there is plain text nobody was reading |
+| `unwrap` *(opt-in)* | ~0.1 ms | — | RTF, BRy envelope, PKCS#7. Almost never fires; on a real PDF it costs reading 16 bytes. It exists because **128 documents of a real archive arrive as `.pdf` while being something else**, and PyMuPDF raises `Failed to open stream` on them. No OCR recovers those — there is no image, there is plain text nobody was reading. [Files that are not PDFs →](formats.md) |
 | `native` | 13.4 ms | 31% | PyMuPDF's text layer |
 | `vision` | ~400 ms | the bulk | Apple only. 92% of words and 100% of numeric anchors preserved at the median of 60 audited documents |
 | `paddle` | ~500 ms | the bulk, off Apple | PP-OCRv6 tiny on ONNX |
@@ -97,6 +113,49 @@ rules that are not obvious:
 `config.engines` overrides both rules, including by naming an unavailable
 engine. That becomes a refused attempt with the reason, never an error —
 silencing the operator's choice would be worse.
+
+## The machine every number was measured on
+
+A timing without its machine is not falsifiable, so here is the machine. Every
+number on this site comes from one of two, and **neither has a discrete GPU**:
+there is no CUDA path in this library, `pyproject.toml` declares none, and the
+ONNX runtime defaults to `CPUExecutionProvider`.
+
+| | |
+|---|---|
+| **Linux** | 2 × Intel Xeon E5-2699 v3 @ 2.30 GHz (turbo 3.60), dual socket — **36 physical cores, 72 logical**, 2 NUMA nodes, 125 GiB RAM, x86_64, Debian 13, kernel 6.12. Bare metal, no cgroup quota, full affinity. |
+| **macOS** | MacBook Air M5 — Apple silicon, **passively cooled**. PP-OCRv6, onnxtr and Tesseract run on the **CPU**; Apple Vision runs on the **Neural Engine**. |
+
+Three details of those two that are load-bearing rather than decorative.
+
+The Linux box is **dual socket**, so part of why the thread table flattens above
+four threads is cross-socket memory, not the model. The "2 cores" column in
+[ADR 0010](adr/index.md#0010-parallelism-is-decided-by-the-machine) is this same
+machine restricted with `taskset` — a real 2-core machine of a later generation
+would be faster per core and would still plateau, because the shape of that
+curve is the point, not its height.
+
+The Mac is a **fanless** laptop. Sustained figures over hundreds of documents —
+the 935-document runs, the ~2.5 pages/s ceiling — are what a passively cooled
+machine delivers over a long batch, which is the number worth having if you are
+sizing a job, and is not the number a short burst would show.
+
+And Vision on the Neural Engine is precisely why "everything was measured on
+CPU" would be the convenient sentence and the false one: the single hardware
+queue that makes its throughput flat against threads is not the CPU.
+
+Two consequences worth stating before someone else states them for you.
+
+**A GPU would change the arithmetic, and not the argument.** `6.2 min against
+4.44` is a CPU-against-CPU comparison; put a GPU behind the single model and it
+narrows, possibly to nothing. What no accelerator touches is the distribution:
+**31% of documents need no model at all**, and no hardware makes reading an
+existing text layer cheaper than 13.4 ms. The cascade's claim is about which
+documents you skip, not about how fast you run the model you did not need.
+
+**These are wall-clock times on a loaded, shared machine**, not a benchmark
+harness. Treat them as ratios between steps — which is how every decision here
+used them — rather than as absolute numbers to reproduce on your hardware.
 
 ## Where a decision is made, and where it is measured
 
@@ -132,7 +191,7 @@ The inverse mistake is worth naming, because it looks like a simplification: a
 step that decides on its own whether to escalate. It ends with two competing
 notions of "adequate extraction" in one pipeline, the step approving itself by
 one criterion and the cascade refusing it by another.
-[ADR 0002](adr/0002-one-acceptance-criterion.md) is that defect written down.
+[ADR 0002](adr/index.md#0002-one-acceptance-criterion) is that defect written down.
 
 ## The platform decides twice
 

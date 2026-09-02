@@ -29,11 +29,11 @@ tests/
 ## Running one slice
 
 ```bash
-.venv/bin/python -m pytest tests/unit          # 229 tests, < 1 s — the edit loop
-.venv/bin/python -m pytest tests/integration   #  69 tests — the seams
-.venv/bin/python -m pytest tests/contract      #  38 tests — the published contracts
+.venv/bin/python -m pytest tests/unit          # 275 tests, < 1 s — the edit loop
+.venv/bin/python -m pytest tests/integration   #  76 tests — the seams
+.venv/bin/python -m pytest tests/contract      #  39 tests — the published contracts
 .venv/bin/python -m pytest tests/packaging     #  15 tests — what ships
-.venv/bin/python -m pytest                     # 351 — everything, and what CI means
+.venv/bin/python -m pytest                     # 405 — everything, and what CI means
 ```
 
 `make test-unit` and `make test-integration` wrap the first two. A bare `pytest`

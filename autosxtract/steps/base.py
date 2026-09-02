@@ -87,6 +87,13 @@ class Context:
     readings: dict[str, int] = field(default_factory=dict)
     #: The text each engine produced, for the agreement gate.
     texts: dict[str, str] = field(default_factory=dict)
+    #: What the orientation fix did, or why it could not run. Empty means it was
+    #: never asked. A step copies it into its details so the record answers
+    #: "was this page turned, and by how much?" — a question that used to have
+    #: no answer either way, because the degrees were discarded at the call site
+    #: and an unavailable OSD returned the image untouched with no note.
+    orientation: dict = field(default_factory=dict)
+    _orientation_ready: bool | None = field(default=None, repr=False)
 
     @property
     def profile(self) -> PageProfile:
@@ -110,7 +117,18 @@ class Context:
         preprocessing noise.
         """
         cfg = self.config
-        key = (cfg.dpi, cfg.grayscale, cfg.max_pages, tuple(indices) if indices else None)
+        # ``if indices is not None``, never ``if indices``. An empty list is a
+        # legitimate request that renders NOTHING, and it is falsy — so it used
+        # to hash to the same key as "render every page" and then poison it: the
+        # next ``images()`` on that document returned [] for the life of the
+        # context, every OCR step reported "no page rasterised", and the
+        # provenance blamed the engines.
+        key = (
+            cfg.dpi,
+            cfg.grayscale,
+            cfg.max_pages,
+            tuple(indices) if indices is not None else None,
+        )
         if key not in self._render_cache:
             images = self.renderer(
                 self.pdf_bytes,
@@ -120,11 +138,40 @@ class Context:
                 indices=indices,
             )
             if cfg.fix_orientation:
-                from autosxtract.pdf.orientation import fix
-
-                images = [fix(i)[0] for i in images]
+                images = self._upright(images, indices)
             self._render_cache[key] = images
         return self._render_cache[key]
+
+    def _upright(self, images: list[bytes], indices: list[int] | None) -> list[bytes]:
+        """Turn sideways pages upright, and leave a record either way.
+
+        The availability check runs **once per document**, not once per page: it
+        starts a process to read Tesseract's version, and paying that per page of
+        a 64-page scan would cost more than the OSD it guards.
+        """
+        from autosxtract.pdf import orientation
+
+        if self._orientation_ready is None:
+            ok, reason = orientation.available()
+            self._orientation_ready = ok
+            if not ok:
+                # The one place this must not do is nothing. An operator who
+                # asked for the correction and did not get it has to find out
+                # from the record, not from the text being worse than expected.
+                self.orientation["unavailable"] = reason
+        if not self._orientation_ready:
+            return images
+
+        turned: list[bytes] = []
+        rotated: dict[int, int] = {}
+        for n, image in enumerate(images):
+            fixed, degrees = orientation.fix(image)
+            turned.append(fixed)
+            if degrees:
+                rotated[indices[n] if indices is not None else n] = degrees
+        if rotated:
+            self.orientation.setdefault("rotated", {}).update(rotated)
+        return turned
 
     def replace_bytes(self, new_bytes: bytes) -> None:
         """Swap the document being processed — used by the unwrap step.
@@ -138,6 +185,10 @@ class Context:
         self._profile = None
         self._pages_without_text = False
         self._render_cache.clear()
+        # The page numbers in ``rotated`` indexed the envelope's pages, not the
+        # payload's. Whether the TOOL is available does not change with the
+        # bytes, so ``_orientation_ready`` survives.
+        self.orientation.pop("rotated", None)
 
     def best_text(self) -> str:
         """The longest text any step has produced for this document.
