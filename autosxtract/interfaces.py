@@ -194,6 +194,20 @@ class DocumentContext(PageSource, Protocol):
         """
         ...
 
+    @property
+    def orientation(self) -> dict:
+        """What the pre-OCR orientation fix did, or why it could not run.
+
+        ``{"rotated": {page: degrees}}`` when pages were turned,
+        ``{"unavailable": reason}`` when the correction was asked for and the
+        OSD was not there, and empty when it was never asked. A step copies it
+        into its details, which is the only reason the record can answer "was
+        this page turned?" — the degrees used to be discarded at the call site
+        and an unavailable OSD returned the image untouched with no note, so a
+        working correction and a missing one left identical evidence.
+        """
+        ...
+
     def best_text(self) -> str: ...
 
     def record_reading(self, engine: str, text: str) -> None: ...

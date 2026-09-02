@@ -32,6 +32,7 @@ import contextlib
 import os
 import queue
 import tempfile
+import threading
 import time
 
 from autosxtract.interfaces import DocumentContext
@@ -78,6 +79,13 @@ class LocalDoclingStep:
         self.timeout = timeout
         self._pool: queue.Queue | None = None
         self._reason = ""
+        # ``extract_batch`` hands the SAME step object to every worker thread,
+        # and ``run`` calls ``available`` once per document. Without this lock
+        # the first N documents all see ``_pool is None`` and each builds its own
+        # pool of converters — ~2 GB of models per pool, N-1 of them orphaned but
+        # resident. ``OCREngine.model`` carries the same lock for the same
+        # reason; this class was the one load path without it.
+        self._load_lock = threading.Lock()
 
     def __repr__(self) -> str:
         return f"LocalDoclingStep(workers={self.workers}, ocr_engine={self.ocr_engine!r})"
@@ -128,20 +136,28 @@ class LocalDoclingStep:
 
     def available(self) -> tuple[bool, str]:
         """``(can_run, reason)`` — never raises, like every engine in the library."""
+        # Checked once outside the lock so the common case — the pool is already
+        # there — costs nothing, and once more inside it, because between the two
+        # another thread may have built it.
         if self._pool is not None:
             return True, f"local docling, {self.workers} worker(s)"
         if self._reason:
             return False, self._reason
-        try:
-            self._pool = self._build_pool()
-        except ImportError as exc:
-            self._reason = (
-                f"docling missing ({exc}); install with pip install 'autosxtract[docling]'"
-            )
-            return False, self._reason
-        except Exception as exc:
-            self._reason = f"local docling did not load: {exc}"
-            return False, self._reason
+        with self._load_lock:
+            if self._pool is not None:
+                return True, f"local docling, {self.workers} worker(s)"
+            if self._reason:
+                return False, self._reason
+            try:
+                self._pool = self._build_pool()
+            except ImportError as exc:
+                self._reason = (
+                    f"docling missing ({exc}); install with pip install 'autosxtract[docling]'"
+                )
+                return False, self._reason
+            except Exception as exc:
+                self._reason = f"local docling did not load: {exc}"
+                return False, self._reason
         return True, f"local docling, {self.workers} worker(s)"
 
     # ── running ──────────────────────────────────────────────────────────

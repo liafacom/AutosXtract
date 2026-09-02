@@ -65,7 +65,7 @@ On a Linux box with the default install, verbatim (`rapidocr` writes its own
 `INFO` lines to *stderr*; the report below is stdout):
 
 ```
-autosxtract 0.5.0
+autosxtract 0.6.0
 machine    Linux (x86_64)
 resources  72 usable core(s)
 automatic parallelism: 4 page(s) per document, 4 document(s) in flight (aggregate cap 144)
@@ -76,6 +76,8 @@ engines:
   [x] paddle       PP-OCRv6 tiny
   [ ] onnx         onnx unavailable: No module named 'onnxtr'; install with pip install autosxtract[onnx]
   [ ] tesseract    tesseract unavailable: No module named 'pytesseract'; install with pip install autosxtract[veto]
+
+orientation: REQUESTED BUT UNAVAILABLE: pytesseract is not installed; install with pip install 'autosxtract[veto]'
 
 cascade:   native -> paddle
 
@@ -98,10 +100,19 @@ Line by line:
 :   Every registered engine, with `[x]` for the ones that load here and a
     **reason in words** for the ones that do not. A reason is not a warning —
     it is the mechanism. An engine that will not load is not an exception, it is
-    an inert step ([ADR 0003](adr/0003-a-missing-engine-is-never-an-exception.md)),
+    an inert step ([ADR 0003](adr/index.md#0003-a-missing-engine-is-never-an-exception)),
     and the reason travels into every `Result.provenance` as well.
     `(single queue: ignores threads)` marks an engine that declared
     `scales_with_threads = False`.
+
+`orientation`
+:   Whether a page that arrives sideways is turned upright before OCR. It needs
+    Tesseract's OSD, from the `[veto]` extra. **`REQUESTED BUT UNAVAILABLE` is
+    the line worth reading**: the correction was asked for — it is on by
+    default — and cannot run, so pages go to the engine as they are. That used
+    to be a silent no-op, byte-for-byte identical to a run where the OSD worked;
+    the reason now appears here and in every `Result.provenance`. Turn the
+    request off with `--no-fix-orientation` if your scans are known upright.
 
 `cascade`
 :   The steps this machine will actually run, in order. **If it says `native`
@@ -202,7 +213,7 @@ read the page and its text passed the acceptance gate.
     still enters that contest — refusing means "not good enough to *stop* here",
     not "throw this away". Discarding refused text left 682 documents with zero
     characters while the PDF had a text layer
-    ([ADR 0004](adr/0004-refused-text-still-competes.md)).
+    ([ADR 0004](adr/index.md#0004-refused-text-still-competes)).
 
 For anything more than the one-line summary, walk the attempts:
 

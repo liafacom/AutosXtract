@@ -327,23 +327,25 @@ are declared in `pyproject.toml`:
 | marker | meaning | how CI treats it |
 |---|---|---|
 | `slow` | long-running | runs everywhere; deselect locally with `-m "not slow"` |
-| `apple` | needs macOS with Vision — never runs on the Linux CI | the `with-ocr` job deselects it (`-m "not apple"`); the `apple` job on macOS runs it |
-| `paddle` | needs the `[paddle]` extra installed | the `with-ocr` job is the one that installs it |
+| `apple` | needs macOS with Vision — never runs on the Linux CI | every Linux job deselects it (`-m "not apple"`: `quality`, `with-ocr` and `pinned`); the `apple` job on macOS runs it |
+| `paddle` | needs the PP-OCRv6 stack really working, not merely importable | runs everywhere — no job deselects it |
 
-One gap to know about, because it will bite whoever first uses the marker: the
-`quality` matrix job runs `pytest` with no `-m` filter, so a test marked
-`apple` would *run* there and fail on Linux rather than being skipped. Until
-that job deselects it too, an Apple-only test has to skip itself at runtime as
-well — a check against `autosxtract.platform`, or `pytest.importorskip` — and
-not lean on the marker alone. Today no test carries `apple` or `paddle`, so
-nothing is broken; the markers are declared ahead of the tests that will need
-them.
+Two things to know about, because both have already been written down wrong
+here:
 
-**The suite must pass on a bare `pip install -e ".[dev]"`.** That is how most
-people will have the library, and it is what the `quality` matrix job checks on
-3.11, 3.12 and 3.13. A test that quietly needs an engine turns somebody else's
-CI red for a reason they cannot act on: mark it, or make it skip itself with a
-reason.
+`-m "not apple"` is the **only** filter any job applies. `paddle` and `slow`
+deselect nothing anywhere, so a test carrying either runs on every runner. That
+is deliberate for `paddle` — `tests/packaging/test_packaging.py` documents its
+paddle test as meant to *fail* rather than skip when the engine is missing,
+because a silently skipped packaging test proves nothing — but it means marking
+a test `paddle` does not make it optional.
+
+And there is no "bare core" job. `pip install -e ".[dev]"` already brings
+rapidocr and onnxruntime: they are mandatory runtime dependencies on every
+platform, not an extra. What separates the `quality` matrix from `with-ocr` is
+that `with-ocr` installs `libgl1`, without which `import cv2` raises and the
+engine goes unavailable. If you need a test to depend on the engine actually
+working, assert on `available()` rather than on what is installed.
 
 **Fixtures are synthetic and generated on the fly**, by PyMuPDF, with invented
 text — see the top of `tests/conftest.py`. This is not a preference either: a
@@ -363,10 +365,17 @@ make docs           # builds docs/ if it exists and carries a builder
 make notebooks      # executes every notebook headlessly
 ```
 
-Both no-op with a sentence while those directories are still being written, and
-so do the `docs` and `notebooks` CI workflows — a permanently red workflow
-teaches everyone to ignore the red mark, and then it stops reporting the
-failure that matters.
+Both directories exist now, so neither target is a no-op any more. Neither
+builder is a dev dependency, though — `mkdocs` lives in `docs/requirements.txt`
+and `nbconvert` is not declared anywhere — so on a venv built by `make setup`
+each target tells you the one command that installs what it needs and stops.
+That is deliberate: imposing a documentation toolchain and a Jupyter stack on
+everybody who only wants to run the tests costs more than the sentence does.
+
+```bash
+.venv/bin/python -m pip install -r docs/requirements.txt   # for make docs
+.venv/bin/python -m pip install nbconvert ipykernel        # for make notebooks
+```
 
 Notebooks are committed with their **outputs cleared**. Two reasons, and the
 second is the serious one: regenerated outputs produce a diff on every run, and
@@ -408,6 +417,17 @@ do not commit it, do not paste it into an issue.
 Then: the new number, the old one, the corpus size, what improved and what
 regressed, all four in the comment beside the constant *and* in the pull
 request. The template has a table for it.
+
+**And if the number is a time, it carries its machine.** A latency, a
+throughput, a "X min against Y" — none of them means anything without the
+hardware that produced it, and a reader who cannot falsify a number is entitled
+to ignore it. The reference environment is one section,
+[The machine every number was measured on](docs/architecture.md#the-machine-every-number-was-measured-on);
+a timing measured there links to it, and a timing measured anywhere else states
+that machine where it appears. Say explicitly whether an accelerator was
+involved: this project's Linux numbers are CPU with no GPU and no CUDA path,
+and Apple Vision's are the Neural Engine — writing "on CPU" over the whole set
+would be the convenient sentence and the false one.
 
 ---
 
@@ -484,9 +504,15 @@ rather than loud: the engine contract, the cascade, the two gates, the vetoes,
 packaging.
 
 Owner review is only *mandatory* if branch protection says so — the settings an
-admin has to enable are written at the top of `CODEOWNERS`. The status checks
-that must be green are `quality` (across 3.11/3.12/3.13), `with-ocr` and
-`packaging`.
+admin has to enable are written at the top of `CODEOWNERS`.
+
+The status checks that must be green are the ones listed in
+`.github/rulesets/main.json`, and that file is the only place they are listed.
+This paragraph used to name three of them — `quality`, `with-ocr` and
+`packaging` — while the ruleset required fourteen, which left `privacy` and
+`history-scan`, the two checks that prevent something irreversible, out of the
+list an admin transcribes by hand. A required-check list copied into prose goes
+stale the first time a job is added, and nothing goes red when it does.
 
 ---
 

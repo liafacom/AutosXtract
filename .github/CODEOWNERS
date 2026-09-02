@@ -14,14 +14,21 @@
 #       [x] Require review from Code Owners        <- this is the one
 #       [x] Dismiss stale pull request approvals when new commits are pushed
 #       [x] Require status checks to pass before merging
-#           -> quality, with-ocr, packaging
+#           -> the checks are NOT listed here. `.github/rulesets/main.json` is
+#              the one list, and it is longer than this comment used to say:
+#              copying an abbreviated version into a second place is how
+#              `privacy` and `history-scan` — the only two checks that prevent
+#              something irreversible — end up advisory on a repository whose
+#              admin followed these instructions.
 #       [x] Require branches to be up to date before merging
 #       [ ] Allow force pushes / Allow deletions   <- leave both off
 #
-# On a repository using rulesets instead of the classic rules, the equivalent
-# is Settings -> Rules -> Rulesets -> New branch ruleset, targeting `main`,
-# with "Require a pull request before merging" and its "Require review from
-# Code Owners" sub-option checked.
+# On a repository using rulesets instead of the classic rules — which is what
+# this repository actually ships — do not transcribe anything by hand: import
+# `.github/rulesets/main.json`. Settings -> Rules -> Rulesets -> New ruleset ->
+# Import a ruleset. It carries the required checks, the review requirement and
+# the force-push and deletion blocks in one file that lives under review, which
+# is the whole reason it is a file. See `.github/rulesets/README.md`.
 #
 # Without that checkbox, everything below is a polite suggestion.
 #

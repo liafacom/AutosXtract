@@ -31,7 +31,7 @@ They are separate because a step may have produced text **and** been refused, an
 that text cannot be thrown away — if no later step does better, it is still the
 best reading the document has. Returning `None` for a refusal left **682
 documents with zero characters while the PDF had a text layer**.
-See [ADR 0004](../adr/0004-refused-text-still-competes.md).
+See [ADR 0004](../adr/index.md#0004-refused-text-still-competes).
 
 So: fill `candidate` whenever you produced text, regardless of the verdict.
 
@@ -135,7 +135,7 @@ cascade = Cascade(steps=[AttachmentStep(), NativeStep(), OCRStep(get("paddle"))]
 ## Call the shared gate, do not write your own
 
 `evaluate` is the **single acceptance criterion** in this pipeline
-([ADR 0002](../adr/0002-one-acceptance-criterion.md)). A step that invents its
+([ADR 0002](../adr/index.md#0002-one-acceptance-criterion)). A step that invents its
 own floor approves itself by one criterion while the cascade refuses it by
 another, and both are then right.
 
@@ -196,7 +196,7 @@ They exist, and they are **explicit by construction**. `DoclingStep` and
 `VLMStep` in `steps/remote.py` require `url` in the constructor: there is no
 discovery through an environment variable, no built-in default and no fallback to
 a known endpoint. `Config` has not a single host, port, URL or credential field,
-and `tests/test_config.py::test_no_field_points_at_a_network` keeps it that way.
+and `tests/unit/test_config.py::test_no_field_points_at_a_network` keeps it that way.
 
 ```python
 import os
@@ -223,11 +223,11 @@ OCR engine on a Mac over a reverse SSH tunnel, and that worker going down
 **silently degraded the text** — 488 documents re-extracted down the worse path,
 19.5 minutes instead of 4.9, 28,239 characters lost, and nobody noticed until
 someone checked. **A remote step nobody declared must not exist.**
-See [ADR 0001](../adr/0001-no-networking-in-the-default-cascade.md).
+See [ADR 0001](../adr/index.md#0001-no-networking-in-the-default-cascade).
 
 `steps/docling_local.py` is the useful counterexample: the same engine, running
 inside the process, with no networking at all. It stays out of the default
-cascade for a **different** reason — ~2 GB of models and ~4 s per document — and
+cascade for a **different** reason — ~2 GB of models and ~4 s per document [on a 72-core Xeon CPU](../architecture.md#the-machine-every-number-was-measured-on) — and
 that is why it lives outside `remote.py`. Confusing "expensive" with "remote"
 would make the invariant meaningless.
 

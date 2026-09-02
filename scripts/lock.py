@@ -49,9 +49,31 @@ def canonical(name: str) -> str:
     return name.lower().replace("_", "-").replace(".", "-")
 
 
-def walk(name: str, extras: frozenset[str], found: dict[str, str], missing: set[str]) -> None:
-    """Depth-first over the *installed* metadata, honouring PEP 508 markers."""
+def walk(
+    name: str,
+    extras: frozenset[str],
+    found: dict[str, str],
+    missing: set[str],
+    seen: set[tuple[str, frozenset[str]]] | None = None,
+) -> None:
+    """Depth-first over the *installed* metadata, honouring PEP 508 markers.
+
+    ``seen`` is not an optimisation. Without it a cycle in installed metadata —
+    they exist in the wild — recurses to ``RecursionError``, and a diamond is
+    re-walked once per path rather than once per node, so the cost is exponential
+    in depth. It works on ``autosxtract[dev]`` because that graph is shallow,
+    which is luck rather than a property.
+
+    The memo is keyed on ``(name, extras)`` and not on the name alone: the same
+    distribution reached with different extras pulls in different requirements,
+    so collapsing them would drop pins.
+    """
+    if seen is None:
+        seen = set()
     key = canonical(name)
+    if (key, extras) in seen:
+        return
+    seen.add((key, extras))
     try:
         dist = metadata.distribution(name)
     except metadata.PackageNotFoundError:
@@ -74,7 +96,7 @@ def walk(name: str, extras: frozenset[str], found: dict[str, str], missing: set[
             wanted = extras or frozenset({""})
             if not any(req.marker.evaluate({"extra": e}) for e in wanted):
                 continue
-        walk(req.name, frozenset(req.extras), found, missing)
+        walk(req.name, frozenset(req.extras), found, missing, seen)
 
 
 def main() -> int:
@@ -93,7 +115,15 @@ def main() -> int:
         )
         return 1
 
-    py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    # MAJOR.MINOR, deliberately without the patch. The interpreter's patch
+    # release does not take part in resolution — markers and wheel tags key on
+    # `3.13`, not on `3.13.5` — so recording it claimed a precision the file
+    # does not have, and made a REQUIRED check hostage to CPython's release
+    # calendar: `setup-python: "3.13"` picks up the newest patch, and the
+    # `pinned` job then failed on a comment line while all 51 pins were
+    # identical. Measured on the first push: 3.13.5 against the runner's
+    # 3.13.15, zero pins different.
+    py = f"{sys.version_info.major}.{sys.version_info.minor}"
     lines = [
         "# ── DEV constraints — pins for the DEVELOPMENT environment and CI ────────",
         "#",

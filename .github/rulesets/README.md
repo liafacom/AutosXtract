@@ -38,7 +38,7 @@ request, then apply.
 | `non_fast_forward` | No force push. History on `main` is append-only, so a commit that was green stays reachable and `git bisect` has something to stand on. | none |
 | `required_linear_history` | No merge commits. The history reads as a list of reviewed changes, and reverting a release is one revert instead of an archaeology exercise. | merge-commit merges are refused; `allowed_merge_methods` below already removes the button. |
 | `pull_request` | Nothing reaches `main` without a pull request, one approval, and a Code Owner among the approvers. | on a two-maintainer project this means **neither maintainer can merge alone** — see the bypass below. |
-| `required_status_checks` | The fifteen checks named in the file must be green, and the branch must be up to date with `main` first. | every merge to `main` invalidates every open pull request, which must then be updated and re-run. |
+| `required_status_checks` | The fourteen checks named in the file must be green, and the branch must be up to date with `main` first. | every merge to `main` invalidates every open pull request, which must then be updated and re-run. |
 
 ### The `pull_request` parameters, individually
 
@@ -103,6 +103,26 @@ Before trusting this list, verify it against a real pull request:
 
 which asks GitHub what check runs that commit produced and diffs them against
 the contexts in `main.json`.
+
+**`dependency-review` is temporarily NOT in this list**, and that is a guardrail
+standing down rather than a guardrail that never existed. It needs the
+**dependency graph**, which is off on this repository — `dependency-graph/sbom`
+answers 404 and `dependency-graph/compare` answers 403 — and with the graph off
+the job fails on every pull request for a reason that is about configuration,
+not about the change. A required check that can only fail does not protect a
+merge, it stops all of them.
+
+The job still RUNS on every pull request, so the signal stays visible; it just
+no longer gates. To restore the gate: turn the graph on at *Settings → Advanced
+Security → Dependency graph*, confirm with
+
+    gh api repos/liafacom/AutosXtract/dependency-graph/sbom --jq '.sbom.packages | length'
+
+and put `{"context": "dependency-review"}` back into `main.json`, then re-run
+the setup script. What is unguarded until then is the licence half in
+particular: `pymupdf` is AGPL-3.0 and carries a NAMED exception in
+`guardrails.yml`, which is the shape of the problem the check exists to catch —
+the next copyleft dependency arrives without one and nothing says so.
 
 `integration_id` is deliberately absent from every entry. Pinning a check to the
 GitHub Actions app (id `15368`) is stricter — it stops a commit status of the

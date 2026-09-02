@@ -47,6 +47,7 @@ of it, which is the state this repository was in before these files existed.
 | 2 | Privacy scan, whole tree | `ci.yml` job **`privacy`** — required check | the same, anywhere in the tree, on every push and pull request | the check goes red and the merge is blocked |
 | 3 | Privacy scan, commit messages and transient lines | `guardrails.yml` job **`history-scan`** — required check | an identifier or credential appears in a commit *message*, or in a line this branch added and later removed | the check goes red and the merge is blocked |
 | 4 | Privacy scan, the release tree | `release.yml` (`build` job) | the same, on the tree the tag points at | the release aborts before anything reaches PyPI |
+| 4b | The suite, on the tree the TAG points at | `release.yml` (`build` job) | the tests fail on the tagged commit | the release aborts before anything reaches PyPI. The tag ruleset constrains the tag's *name*, not what it points at, so a green `main` says nothing about where somebody tagged |
 | 5 | Lint, format, types, tests on 3.11 / 3.12 / 3.13 | `ci.yml` job **`quality`** — 3 required checks | any of them fails on any supported interpreter | merge blocked |
 | 6 | The suite with a real OCR engine | `ci.yml` job **`with-ocr`** — required check | the engine is missing, inert, or the integration tests fail | merge blocked |
 | 7 | The Apple cascade | `ci.yml` job **`apple`** — required check | Vision's path breaks on macOS | merge blocked |
@@ -55,7 +56,7 @@ of it, which is the state this repository was in before these files existed.
 | 10 | The wheel imports in a clean environment | `ci.yml` job **`packaging`** — required check | a subpackage is missing from the wheel — invisible inside the repository, fatal outside it | merge blocked |
 | 11 | The documentation still builds, strictly | `docs.yml` job **`docs`** — required check | a dead link, or a page in no navigation entry | merge blocked |
 | 12 | Static analysis of the Python | `codeql.yml` job **`CodeQL (python)`** — required check | a dataflow defect: traversal, injection, an unsafe deserialisation | merge blocked; the finding lands in the Security tab |
-| 13 | New dependencies are neither vulnerable nor licence-incompatible | `guardrails.yml` job **`dependency-review`** — required check | a pull request adds a dependency with a moderate-or-worse advisory, or a licence outside the allow list | merge blocked |
+| 13 | New dependencies are neither vulnerable nor licence-incompatible | `guardrails.yml` job `dependency-review` — **temporarily not required**, see §3 | a pull request adds a dependency with a moderate-or-worse advisory, or a licence outside the allow list | reported only; the dependency graph is off, so today the job fails on configuration rather than on the change |
 | 14 | The title survives being squashed | `guardrails.yml` job **`pr-hygiene`** — required check | the title is not `type(scope): subject` | merge blocked; fix by retitling, no new commit needed |
 | 15 | Diff size | `guardrails.yml` job `pr-hygiene` | over 1000 changed lines or 40 files | a **warning** only — never blocks |
 | 16 | Notebooks still execute | `notebooks.yml` job `notebooks` | a notebook's API drifted | reported, deliberately **not** required — see §7 |
@@ -100,9 +101,13 @@ bootstrap (macos-latest)
 packaging
 docs
 CodeQL (python)
-dependency-review
 pr-hygiene
 ```
+
+`dependency-review` is **absent on purpose, and temporarily**. It needs the
+dependency graph, which is off on this repository, and a required check that can
+only fail blocks every merge instead of protecting one. The job still runs on
+every pull request. `.github/rulesets/README.md` has how to put it back.
 
 **A wrong name does not fail loudly — it protects nothing, and blocks
 everything.** GitHub matches a required check by name. A name nothing reports

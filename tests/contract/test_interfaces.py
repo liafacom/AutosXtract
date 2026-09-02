@@ -22,7 +22,11 @@ would test the base class, which is not the same thing and is already covered.
 
 from __future__ import annotations
 
+import importlib.util
 import inspect
+import pathlib
+import sys
+import types
 from typing import Generic, Protocol
 
 import pytest
@@ -127,10 +131,57 @@ def test_the_module_pulls_in_nothing_at_import_time():
     being a way to depend on a contract without depending on the code behind
     it — and the layering of CLAUDE.md section 10 would be a convention again.
     """
-    source = inspect.getsource(interfaces)
-    head = source.split("if TYPE_CHECKING:")[0]
-    assert "import autosxtract" not in head
-    assert "from autosxtract" not in head
+    # Checked by EXECUTING the module, not by reading its source.
+    #
+    # The substring version — splitting on ``if TYPE_CHECKING:`` and asserting
+    # "import autosxtract" is absent from the head — had two holes wide enough
+    # to drive the invariant through: a RELATIVE import (``from .config import
+    # Config``) matches neither string, and anything placed after the
+    # ``TYPE_CHECKING`` block is outside the text being inspected entirely.
+    #
+    # It is loaded BY PATH, under a name outside the package, so that importing
+    # it does not run ``autosxtract/__init__.py`` — which imports the cascade and
+    # would answer for the package's eagerness rather than for this module's.
+    # That is exactly the property being pinned: ``interfaces`` has to be usable
+    # without anything underneath it existing.
+    path = pathlib.Path(inspect.getfile(interfaces))
+    spec = importlib.util.spec_from_file_location("_isolated_interfaces", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+
+    # The comparison CANNOT be a ``sys.modules`` diff: this very file does
+    # ``from autosxtract import interfaces`` at the top, so the package and its
+    # 49 submodules are already loaded before the snapshot is taken and an eager
+    # absolute import could never show up in the difference. What is inspected
+    # instead is what the module's own execution BOUND.
+    sys.modules["_isolated_interfaces"] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop("_isolated_interfaces", None)
+
+    bound_modules = sorted(
+        name
+        for name, value in vars(module).items()
+        if isinstance(value, types.ModuleType) and value.__name__.startswith("autosxtract")
+    )
+    assert bound_modules == [], f"interfaces bound the module(s) {bound_modules}"
+
+    # ``from autosxtract.config import Config`` binds a CLASS, not a module, so
+    # the check above would not see it. Anything defined inside the package and
+    # not part of the published contract is an eager import.
+    leaked = sorted(
+        name
+        for name, value in vars(module).items()
+        if not name.startswith("_")
+        and getattr(value, "__module__", "").startswith("autosxtract")
+        and name not in set(interfaces.__all__)
+    )
+    assert leaked == [], f"interfaces bound {leaked} from inside the package"
+
+    # And the contracts really did load — otherwise the assertions above are
+    # satisfied by a module that failed to define anything.
+    assert set(interfaces.__all__) <= set(vars(module))
 
 
 # ── engines ──────────────────────────────────────────────────────────────
@@ -365,6 +416,9 @@ class FakeContext:
         self.config = Config()
         self.recorded: dict[str, str] = {}
         self._text = text
+        # Empty = the orientation fix was never asked for. A step reads this to
+        # report whether the page was turned before the engine saw it.
+        self.orientation: dict = {}
 
     def images(self, *, indices: list[int] | None = None) -> list[bytes]:
         return [b"\x89PNG-one-page"]

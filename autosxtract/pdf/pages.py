@@ -95,6 +95,7 @@ def subdocument(pdf_bytes: bytes, indices: list[int]) -> bytes | None:
             source = mupdf().open(stream=pdf_bytes, filetype="pdf")
         except Exception:
             return None
+        target = None
         try:
             target = mupdf().open()
             for i in sorted(indices):
@@ -102,10 +103,14 @@ def subdocument(pdf_bytes: bytes, indices: list[int]) -> bytes | None:
                     target.insert_pdf(source, from_page=i, to_page=i)
             if not len(target):
                 return None
-            data = target.tobytes()
-            target.close()
-            return data
+            return target.tobytes()
         except Exception:
             return None
         finally:
+            # BOTH documents, on every path. The early ``return None`` for an
+            # empty target and a raising ``insert_pdf`` used to leave the target
+            # open — the one ``finally`` in this package that did not cover
+            # everything it had opened.
             close(source)
+            if target is not None:
+                close(target)

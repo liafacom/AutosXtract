@@ -19,11 +19,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from autosxtract.interfaces import DocumentContext
+from autosxtract.interfaces import DocumentContext, Gate
 from autosxtract.pdf._mupdf import close, mupdf
 from autosxtract.pdf.coverage import has_image_without_text
 from autosxtract.pdf.lock import pdf_lock
-from autosxtract.quality.metrics import normalize
+from autosxtract.quality.gate import evaluate
+from autosxtract.quality.metrics import glyph_index_ratio, normalize
 from autosxtract.quality.scoring import score_structure
 from autosxtract.steps.base import StepResult
 from autosxtract.types import Attempt, Candidate
@@ -72,9 +73,32 @@ def read_native_text(pdf_bytes: bytes) -> tuple[str, list[dict[str, Any]]]:
 
 
 class NativeStep:
-    """Reads the text layer and decides whether it ends the cascade."""
+    """Reads the text layer and decides whether it ends the cascade.
+
+    The decision is ``quality.gate.evaluate``'s — the SAME function ``OCRStep``
+    calls and the same one that judges whether the next step is worth paying
+    for. Two refusals run before it, and they are refusals this step alone can
+    make: a structural score below the floor, and a large image sitting in a
+    region the text layer does not cover.
+
+    It used to end on its own criterion — ``score_structure`` against
+    ``native_accept_score`` — and never consulted the gate at all. The two
+    disagreed on exactly the input the gate was written for: a page whose text
+    layer is only the conformity stamp scores 0.90 as *structure* (it is
+    well-formed text) while the gate escalates it for holding ten useful words.
+    Of 1,339 documents in the archive this was measured on, 403 had text that
+    looked fine and was only the signature stamp. That is the defect
+    ``evaluate`` exists to stop repeating, and it was living in this file.
+    """
 
     name = "native"
+
+    def __init__(self, *, gate: Gate = evaluate) -> None:
+        # A parameter for the same reason ``OCRStep`` has one: so the acceptance
+        # criterion stays visibly ONE object that a caller can replace on both
+        # sides at once. Passing a second gate here while the cascade keeps the
+        # first is the defect above with a constructor argument.
+        self.gate = gate
 
     def run(self, ctx: DocumentContext) -> StepResult:
         t0 = time.perf_counter()
@@ -115,4 +139,27 @@ class NativeStep:
                 candidate,
             )
 
+        # ``score=`` is deliberately NOT passed. The gate's ``min_score`` is
+        # documented and measured against ``score_text``; what this step has is
+        # ``score_structure``, a different function with a density family
+        # ``score_text`` does not have. Both land in 0-1, which is exactly what
+        # makes the mix-up cheap to write and invisible to read. The score
+        # dimension is already covered here by ``native_accept_score``, above,
+        # and at a stricter floor (0.75 against 0.35) — so passing it would be
+        # inert today and a scale confusion the day somebody lowers it.
+        verdict = self.gate(
+            text,
+            ctx.profile,
+            min_useful_words=ctx.config.min_useful_words,
+            min_chars_per_page=ctx.config.min_chars_per_page,
+            glyph_index=glyph_index_ratio(text),
+            stamps=ctx.config.stamp_patterns(),
+        )
+        if verdict.escalate:
+            return StepResult(Attempt(self.name, False, verdict.reason, len(text), ms), candidate)
+        # On acceptance the gate's own reason can be a statement about the SHEET
+        # rather than about the text — "page with no visual content" is how a
+        # born-digital filing passes, since it has neither image nor vector — and
+        # printing that as the provenance of a good extraction is a false
+        # sentence in the one record that is supposed to be auditable.
         return StepResult(Attempt(self.name, True, "adequate extraction", len(text), ms), candidate)

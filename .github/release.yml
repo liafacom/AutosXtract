@@ -29,9 +29,9 @@
 # also added a knob is a quality fix nobody reads.
 #
 # ── Alignment with .github/labels.yml ────────────────────────────────────
-# Every label named here except `breaking-change` exists in .github/labels.yml.
-# A category keyed on a label nobody applies is silently empty, so this file is
-# only as good as the labelling discipline — the issue forms and Dependabot
+# Every label named here exists in .github/labels.yml, `breaking-change`
+# included (labels.yml:79). A category keyed on a label nobody applies is
+# silently empty, so this file is only as good as the labelling discipline — the issue forms and Dependabot
 # apply theirs automatically, and the rest is on the reviewer who merges.
 changelog:
   # No `exclude:` block, deliberately. Only pull requests MERGED into the range
@@ -42,10 +42,10 @@ changelog:
   # below, and a release that silently moved a pinned dependency is exactly the
   # thing a reader of the notes is entitled to see.
   categories:
-    # Not in labels.yml yet — see RELEASING.md. Harmless while it does not
-    # exist (the category simply stays empty), and the day a major version is
-    # cut it is the first thing a reader has to be shown, so the slot is held
-    # open rather than invented under pressure.
+    # First, because the day a major version is cut this is what a reader has
+    # to be shown before anything else. The label exists in labels.yml; the
+    # category stays empty until somebody applies it, which is the correct
+    # behaviour for a release that breaks nothing.
     - title: 💥 Breaking changes
       labels:
         - breaking-change

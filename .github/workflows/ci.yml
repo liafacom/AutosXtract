@@ -109,13 +109,20 @@ jobs:
           ruff check .
           ruff format --check .
 
+      # A HARD gate, like the two above it. It carried `continue-on-error: true`
+      # and no other job ran mypy, so type checking was advisory everywhere —
+      # while GUARDRAILS.md listed "types" among the required checks, and
+      # README, CONTRIBUTING and the PR template all present `make all`, where
+      # `typecheck` cannot be skipped, as equal to what CI runs. A check nobody
+      # can fail is documentation, not a guardrail.
       - name: Types
         run: mypy autosxtract
-        continue-on-error: true
 
-      # No OCR extra: the suite has to pass on the bare core, because that is
-      # how many people will install it. The tests that need an engine mark
-      # themselves as skipped.
+      # This job installs `.[dev]` and nothing more. That is NOT the bare core:
+      # rapidocr and onnxruntime are mandatory runtime dependencies, so the OCR
+      # stack is here whether or not an extra is named. What separates this job
+      # from `with-ocr` is the absence of libGL, which is what decides whether
+      # the engine is importable — see the comment in that job.
       #
       # `-m "not apple"` is not decoration. A declared marker deselects nothing
       # on its own: without the filter this job RUNS the Vision tests on Linux

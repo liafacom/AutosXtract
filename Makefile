@@ -122,9 +122,18 @@ clean:  ## Remove caches, build artefacts and dist/ (never the venv)
 # Both directories are being created right now by other hands. Until they land,
 # these targets say so and exit 0 — a green `make` must not depend on which
 # branch of someone else's work happens to be merged.
-docs:  ## Build docs/ (no-op until docs/ exists)
+# mkdocs is NOT a dev dependency — it lives in docs/requirements.txt, which
+# nothing local installs. Probing for it and printing the install line is what
+# `build` and `notebooks` already do; this target used to fall straight through
+# to `mkdocs build` and die with `No module named mkdocs` on a venv that
+# `make setup` had just built correctly.
+docs: require-venv  ## Build docs/ (says how to get the builder if it is missing)
 	@if [ ! -d docs ]; then echo "docs/ does not exist yet — nothing to build."; \
-	elif [ -f mkdocs.yml ]; then $(PY) -m mkdocs build; \
+	elif [ -f mkdocs.yml ]; then \
+	  $(PY) -c 'import mkdocs' 2>/dev/null || { \
+	    echo "mkdocs is missing (it is documentation tooling, not a dev dependency):"; \
+	    echo "  $(PY) -m pip install -r docs/requirements.txt"; exit 1; }; \
+	  $(PY) -m mkdocs build; \
 	elif [ -f docs/conf.py ]; then $(PY) -m sphinx docs docs/_build/html; \
 	elif [ -f docs/Makefile ]; then $(MAKE) -C docs html; \
 	else echo "docs/ exists but carries no builder (mkdocs.yml, conf.py or Makefile) — nothing to build."; fi
@@ -132,7 +141,7 @@ docs:  ## Build docs/ (no-op until docs/ exists)
 # Executing them is the only check that matters: a notebook that no longer runs
 # is documentation that lies. Jupyter stays out of the dev extra — it is a large
 # toolchain to impose on everyone who only wants to run the tests.
-notebooks:  ## Execute notebooks/ headlessly (no-op until notebooks/ exists)
+notebooks: require-venv  ## Execute notebooks/ headlessly (no-op until notebooks/ exists)
 	@if [ ! -d notebooks ]; then echo "notebooks/ does not exist yet — nothing to run."; \
 	elif ! $(PY) -c 'import nbconvert' 2>/dev/null; then \
 	  echo "notebooks/ exists but nbconvert is missing (not a dev dependency):"; \

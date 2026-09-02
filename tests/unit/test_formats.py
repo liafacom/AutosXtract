@@ -59,6 +59,34 @@ def test_a_surplus_brace_does_not_truncate_the_body():
     assert "Corpo do despacho" in text_from_rtf(broken)
 
 
+def test_trailing_padding_is_not_promoted_to_document_body():
+    """Bytes after the root close are not content, and must not become it.
+
+    The repair used to take "the last ``}`` in the file" as the root group's
+    close. A file with padding after the close — which is what carving an RTF
+    out of a PKCS#7 envelope leaves behind — inverts that: the genuine close is
+    classified as the surplus one and dropped, the padding's brace becomes the
+    root close, and everything between them is promoted to body.
+
+    Worse than merely wrong. The polluted text is LONGER, so it also wins
+    ``best_text`` and the final contest — volume on the wrong side, which is the
+    failure CLAUDE.md §4 exists to name.
+    """
+    body = rb"{\rtf1\ansi\deff0 {\fonttbl{\f0 Arial;}}\f0 SENTENCA procedente.}"
+    padding = b"\r\n" + b"PADDING-NAO-E-CONTEUDO " * 5 + b"}"
+
+    assert text_from_rtf(body) == text_from_rtf(body + padding)
+    assert "PADDING" not in text_from_rtf(body + padding)
+
+
+def test_a_surplus_brace_survives_trailing_padding_too():
+    """Both defects in one file — the shape the archive actually produces."""
+    broken = rb"{\rtf1\ansi{\fonttbl{\f0 Times;}}}\f0 Corpo do despacho.\par}"
+    text = text_from_rtf(broken + b"\r\nPADDING PADDING }")
+    assert "Corpo do despacho" in text
+    assert "PADDING" not in text
+
+
 def test_well_formed_rtf_passes_untouched():
     markup = r"{\rtf1\ansi texto\par}"
     assert _rebalance_braces(markup) == markup
