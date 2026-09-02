@@ -98,7 +98,7 @@ Line by line:
 :   Every registered engine, with `[x]` for the ones that load here and a
     **reason in words** for the ones that do not. A reason is not a warning —
     it is the mechanism. An engine that will not load is not an exception, it is
-    an inert step ([ADR 0003](adr/0003-a-missing-engine-is-never-an-exception.md)),
+    an inert step ([ADR 0003](adr/index.md#0003-a-missing-engine-is-never-an-exception)),
     and the reason travels into every `Result.provenance` as well.
     `(single queue: ignores threads)` marks an engine that declared
     `scales_with_threads = False`.
@@ -202,7 +202,7 @@ read the page and its text passed the acceptance gate.
     still enters that contest — refusing means "not good enough to *stop* here",
     not "throw this away". Discarding refused text left 682 documents with zero
     characters while the PDF had a text layer
-    ([ADR 0004](adr/0004-refused-text-still-competes.md)).
+    ([ADR 0004](adr/index.md#0004-refused-text-still-competes)).
 
 For anything more than the one-line summary, walk the attempts:
 

@@ -18,7 +18,7 @@ autosxtract/patterns/data/pt_br.toml   31 entries — the corpus this library wa
 ```
 
 This is the adaptation seam named in CLAUDE.md §12, and it is now a real one
-rather than a promise. See [ADR 0008](../adr/0008-patterns-are-data.md).
+rather than a promise. See [ADR 0008](../adr/index.md#0008-the-domain-patterns-are-data).
 
 ## Resolution order
 

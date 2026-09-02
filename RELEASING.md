@@ -121,6 +121,7 @@ the generated pull request list, and both distribution files attached.
 |---|---|---|
 | tag / version mismatch | The tag and `_version.py` disagree | Delete the tag (`git push --delete origin vX.Y.Z`), fix the file on `main`, tag again. Nothing was published. |
 | CHANGELOG section missing | You tagged with the section still called `[Unreleased]`, or it is empty | Same: delete the tag, fix, re-tag. |
+| the suite on the tagged tree | The tests fail on the commit the tag points at | The tag ruleset constrains the tag's *name*, not what it points at, so a green `main` proves nothing about where you tagged. Delete the tag, fix, re-tag. Nothing was published. |
 | clean-venv install and import | The wheel is missing a subpackage or the pattern data | Real defect. It is invisible inside the repository because the source tree is on `sys.path` and hides the hole. Fix `[tool.hatch.build]`, cut a new patch version. |
 | `twine check` | PyPI would refuse to render the README, leaving the project page blank | Fix the README, cut a new patch version. |
 | privacy scan | A real identifier or document is in the tree the tag points at | **Stop.** This is a leak, not a build failure. Do not re-tag until it is out of the tree, and read `SECURITY.md`. |

@@ -36,6 +36,7 @@ text the cheap layer already read.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -92,7 +93,7 @@ def assess_vetoes(
     pdf_bytes: bytes,
     current_text: str,
     *,
-    local_reading: LocalReading | None = None,
+    local_reading: LocalReading | Callable[[], LocalReading | None] | None = None,
     min_useful_words: int = 12,
     min_reliable_words: int = 3,
     min_agreement: float = 0.60,
@@ -106,6 +107,14 @@ def assess_vetoes(
     know" — the local engine is absent — and the three are skipped; it never
     becomes "there is no text", because the absence of a tool is not evidence
     about the document.
+
+    Pass it as a **callable** to keep the declared cost order. The witness runs a
+    real OCR (~1 s, and several seconds once the recovery track engages), while
+    vetoes 1 and 2 are pixel statistics at 40 DPI. Handing this function an
+    already-computed reading inverts that: Python evaluates the argument first,
+    so a blank sheet paid for the whole witness before the cheapest veto that
+    was written to reject it for free got to run. The callable is invoked at
+    most once, and never when a pixel veto has already fired.
     """
     no_text = useful_words(current_text, stamps) < min_useful_words
 
@@ -119,28 +128,31 @@ def assess_vetoes(
         if signals.is_nearly_blank(pdf_bytes):
             return Veto("no_ink", "page with no text and almost no ink outside the stamp")
 
-    if local_reading is None:
+    # Only here — after the two cheap ones have had their chance.
+    reading = local_reading() if callable(local_reading) else local_reading
+
+    if reading is None:
         return None
 
-    if local_reading.reliable_words < min_reliable_words:
+    if reading.reliable_words < min_reliable_words:
         return Veto(
             "no_legible_word",
             "a local OCR read the page and found no legible word",
-            f"{local_reading.reliable_words} reliable words, "
-            f"mean confidence {local_reading.mean_confidence:.0f}, "
-            f"track {local_reading.track}",
+            f"{reading.reliable_words} reliable words, "
+            f"mean confidence {reading.mean_confidence:.0f}, "
+            f"track {reading.track}",
         )
 
-    if useful_words(local_reading.text, stamps) < min_useful_words:
+    if useful_words(reading.text, stamps) < min_useful_words:
         return Veto(
             "sparse_page",
             "a local OCR read the whole page and it holds little content",
-            f"{useful_words(local_reading.text, stamps)} useful words, floor {min_useful_words}",
+            f"{useful_words(reading.text, stamps)} useful words, floor {min_useful_words}",
         )
 
     if min_agreement > 0:
         agreement = assess_agreement(
-            {"cheap": current_text, "local": local_reading.text},
+            {"cheap": current_text, "local": reading.text},
             word_floor=min_useful_words,
             min_similarity=min_agreement,
             stamps=stamps,

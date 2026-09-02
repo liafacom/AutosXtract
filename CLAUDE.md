@@ -6,8 +6,11 @@ something once.
 
 ## 1. The default cascade does no networking, and networking is never accidental
 
-`Cascade()` assembles local steps only. No engine and no gate opens a socket.
-There are exactly two exceptions, and both are explicit:
+`Cascade()` assembles local steps only, and nothing it assembles opens a socket.
+Everything in the package that CAN reach the network is listed here. The list is
+exhaustive on purpose: an audit of this invariant is a grep for `httpx`, and a
+file that turns up in that grep and is not named below is either a defect or a
+line somebody forgot to add.
 
 - `engines/models.py` downloads the PP-OCRv6 weights **once**, and extraction
   works without it (falling back to rapidocr's embedded model).
@@ -15,6 +18,20 @@ There are exactly two exceptions, and both are explicit:
   the constructor**. They are not in the default cascade, there is no discovery
   through an environment variable, no built-in default and no fallback to a
   known endpoint.
+- `engines/worker.py` brings `VisionWorkerEngine` — an **engine** that speaks
+  HTTP, which is why it needs saying out loud. Same constructor rule (`url`
+  mandatory), plus one more: it is deliberately absent from the registration
+  imports in `engines/__init__.py`, so `engine_order()` can never select it and
+  no cascade can acquire it by accident. It exists because on Linux there is no
+  other way to reach Apple Vision, and reaching Vision over a tunnel is
+  literally the incident below — which is why the guard is one layer stricter
+  than for a remote *step*.
+- `engines/paddle.py` and `engines/onnx.py` fetch model weights from Hugging Face
+  on first load when their heavier backends are installed (`_load_paddleocr`
+  sets `PADDLE_PDX_MODEL_SOURCE`; `onnxtr` fetches its pretrained weights). Same
+  class of traffic as `models.py` — weights, once, not document content — but it
+  happens outside `models.py`, so an audit that only watched that file would
+  miss it.
 
 `steps/docling_local.py` is the useful counterexample: the same engine as
 `DoclingStep`, with no networking at all. It stays out of the default cascade
@@ -109,6 +126,16 @@ correction improved anchors across 60 documents (+4) and worsened them across
 the whole cascade (−227), because the worse text failed the gate and fell to
 worse engines. What decides is the cascade's behaviour, not one engine's output.
 Use `scripts/compare_engines.py`, which measures both.
+
+A time carries its machine, always. A latency, a throughput or a "6.2 min
+against 4.44" without the hardware behind it is not falsifiable, and the reader
+is right to ignore it. The reference environment is
+`docs/architecture.md`'s "The machine every number was measured on": 2 × Xeon
+E5-2699 v3 (72 logical cores, dual socket, Debian 13) for everything on Linux,
+and a fanless MacBook Air M5 for Vision. No discrete GPU and no CUDA path
+anywhere in the package — except Apple Vision, which runs on the Neural Engine
+and is exactly why "everything was measured on CPU" is the convenient sentence
+and the wrong one. A number measured elsewhere names its own machine on the spot.
 
 ## 9. No real document in the repository
 

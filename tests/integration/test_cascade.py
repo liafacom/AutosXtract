@@ -14,11 +14,16 @@ the acceptance criterion, ``unit/test_selection.py`` for the contest.
 
 from __future__ import annotations
 
+import hashlib
+import re
+import time
+
 import pytest
 
 from autosxtract.cascade import Cascade
 from autosxtract.config import Config
 from autosxtract.engines.base import OCREngine
+from autosxtract.steps.base import Context
 from autosxtract.steps.native import NativeStep
 from autosxtract.steps.ocr import OCRStep
 
@@ -53,6 +58,17 @@ def _cascade(*engines, **config) -> Cascade:
     cfg = Config(**config)
     steps = [NativeStep(), *(OCRStep(e) for e in engines)]
     return Cascade(cfg, steps=steps)
+
+
+def _rendered_pages(pdf_bytes: bytes, config: Config) -> list[bytes]:
+    """The very images the cascade will hand the engine, in document order.
+
+    Built through ``Context`` rather than by calling ``render`` directly, so the
+    DPI, the greyscale flag and the orientation fix are whatever the cascade
+    itself would apply — otherwise the bytes a test hashes are not the bytes the
+    engine is handed.
+    """
+    return Context(pdf_bytes=pdf_bytes, config=config).images()
 
 
 # ── the cheap path ───────────────────────────────────────────────────────
@@ -220,27 +236,54 @@ def test_an_unreadable_pdf_returns_an_empty_result_with_a_reason():
 
 
 @pytest.mark.parametrize("parallelism", [1, 4])
-def test_page_order_is_preserved(pdf_scanned, parallelism):
-    """Reassembling in completion order would scramble the document."""
+def test_page_order_is_preserved(pdf_scanned_multipage, parallelism):
+    """Reassembling in completion order would scramble the document.
+
+    Two things this test needs in order to prove anything, and the version it
+    replaces had neither. The fixture must have SEVERAL pages — ``transcribe``
+    takes the sequential branch below two, so the ``parallelism=4`` case never
+    reached the code it was parametrised to exercise, and order cannot be wrong
+    in a one-page document. And the assertion has to look at the TEXT: the old
+    one was ``engine.n >= 1``, which a reassembly by completion order satisfies
+    just as well as one by input order.
+
+    The engine labels each page by the image it was handed, not by call order —
+    a counter would only record the order the threads happened to start in.
+    """
 
     class Numbered(OCREngine):
         name = "numbered"
 
         def __init__(self):
             super().__init__()
-            self.n = 0
+            self.seen: list[bytes] = []
 
         def available(self):
             return True, "fake"
 
         def transcribe_page(self, image):
-            self.n += 1
-            return f"page {self.n}", 99.0
+            # Slow the FIRST page down so completion order and input order
+            # genuinely differ under threads. Without this the parallel path can
+            # finish in input order by luck and the test proves nothing.
+            if not self.seen:
+                time.sleep(0.05)
+            self.seen.append(image)
+            marker = hashlib.sha1(image).hexdigest()[:8]
+            return f"conteudo da pagina com marcador {marker} nos autos", 99.0
 
     engine = Numbered()
     cascade = _cascade(engine, page_parallelism=parallelism, consensus_gate=False)
-    cascade.extract(pdf_scanned)
-    assert engine.n >= 1
+    images = _rendered_pages(pdf_scanned_multipage, cascade.config)
+    assert len(images) >= 4, "the fixture must be multi-page for this test to mean anything"
+    # And the pages must be DISTINGUISHABLE, or every order satisfies the
+    # assertion below. This guard is the one that catches a fixture regression.
+    assert len({hashlib.sha1(i).hexdigest() for i in images}) == len(images)
+
+    r = cascade.extract(pdf_scanned_multipage)
+
+    expected = [hashlib.sha1(image).hexdigest()[:8] for image in images]
+    found = re.findall(r"marcador ([0-9a-f]{8})", r.text)
+    assert found == expected
 
 
 # ── the new local steps ──────────────────────────────────────────────────
@@ -414,3 +457,259 @@ def test_the_layers_run_with_an_engine_that_gives_geometry(pdf_scanned):
     report = next(a for a in r.attempts if a.step == "ocr").details["layers"]
     assert report["lines_total"] == 2
     assert "·" not in r.text  # the fragment was dropped
+
+
+# ── the vetoes, reached THROUGH the cascade (CLAUDE.md §13) ──────────────
+#
+# `tests/unit/test_vetoes.py` answers `assess_vetoes` as a pure function, and
+# answers it well. What had no test at all was the WIRING: every cascade test
+# with an expensive step switched the vetoes off (`veto_engine=None` or
+# `expensive_step_vetoes=False`), so `cascade._veto` and the whole of
+# `cascade._witness` were never executed. Deleting the veto block from
+# `extract` left the suite green and the 27.2 minutes per document that §13
+# claims to save silently stopped being saved.
+
+
+class _Witness:
+    """A local engine of another architecture, standing in for Tesseract."""
+
+    name = "witness"
+
+    def __init__(self, reading=None, *, ok=True, reason="fake", raises=False) -> None:
+        self.reading = reading
+        self.ok = ok
+        self.reason = reason
+        self.raises = raises
+        self.calls = 0
+
+    def available(self):
+        return self.ok, self.reason
+
+    def read_document(self, pdf_bytes, *, max_pages=3, min_reliable_words=3):
+        self.calls += 1
+        if self.raises:
+            raise RuntimeError("the witness fell over")
+        return self.reading
+
+
+def _with_witness(monkeypatch, witness):
+    """Point `config.veto_engine` at a fake through the registry lookup."""
+    from autosxtract import cascade as cascade_module
+
+    def fake_get(name, **options):
+        if name == "witness":
+            return witness
+        raise LookupError(name)
+
+    monkeypatch.setattr(cascade_module.engines, "get", fake_get)
+
+
+def test_a_veto_skips_the_expensive_step_and_says_so(monkeypatch, pdf_scanned):
+    """The blocking half: the step does not run, and the provenance carries why."""
+    from autosxtract.quality.vetoes import LocalReading
+
+    witness = _Witness(LocalReading(text="", words=0, reliable_words=0, track="direct"))
+    _with_witness(monkeypatch, witness)
+    expensive = FakeEngine("expensive", PROSE)
+    cascade = Cascade(
+        Config(
+            min_chars_per_page=5000,
+            veto_engine="witness",
+            expensive_step_vetoes=True,
+            consensus_gate=False,
+            agreement_gate=False,
+        ),
+        steps=[NativeStep(), OCRStep(FakeEngine("cheap", "")), _expensive(expensive)],
+    )
+    r = cascade.extract(pdf_scanned)
+
+    assert expensive.calls == 0, "the veto has to stop the expensive step running"
+    assert any(a.step == "veto:no_legible_word" for a in r.attempts)
+    assert "veto:no_legible_word" in r.provenance
+
+
+def test_the_cheap_pixel_vetoes_run_BEFORE_the_witness(monkeypatch, pdf_blank):
+    """§13's cost order: pixel statistics at 40 DPI (ms), THEN a real OCR (~1 s).
+
+    The witness used to be evaluated as an argument to ``assess_vetoes``, so
+    Python ran it first: a blank sheet paid for a full local OCR — with its
+    300 DPI recovery track — before the veto written to reject it for free got
+    to run. Passing a callable is what keeps the declared order honest, and this
+    asserts the witness was never asked at all.
+    """
+    witness = _Witness(None)
+    _with_witness(monkeypatch, witness)
+    expensive = FakeEngine("expensive", PROSE)
+    cascade = Cascade(
+        Config(
+            min_chars_per_page=5000,
+            veto_engine="witness",
+            expensive_step_vetoes=True,
+            consensus_gate=False,
+            agreement_gate=False,
+        ),
+        steps=[NativeStep(), OCRStep(FakeEngine("cheap", "")), _expensive(expensive)],
+    )
+    r = cascade.extract(pdf_blank)
+
+    assert any(a.step.startswith("veto:") for a in r.attempts)
+    assert witness.calls == 0, "a pixel veto fired; the ~1 s witness must not have run"
+
+
+def test_a_missing_witness_reaches_the_provenance(monkeypatch, pdf_scanned):
+    """§3's corollary: degrading without breaking is right, in silence is not.
+
+    With Tesseract off the PATH, vetoes 3 to 5 never fire and every escalated
+    document pays the expensive step. That used to produce a provenance
+    byte-for-byte identical to a run where the witness had approved — the one
+    thing that made the difference invisible to whoever reads the record.
+    """
+    witness = _Witness(None, ok=False, reason="tesseract is not on the PATH")
+    _with_witness(monkeypatch, witness)
+    expensive = FakeEngine("expensive", PROSE)
+    cascade = Cascade(
+        Config(
+            min_chars_per_page=5000,
+            veto_engine="witness",
+            expensive_step_vetoes=True,
+            consensus_gate=False,
+            agreement_gate=False,
+        ),
+        steps=[NativeStep(), OCRStep(FakeEngine("cheap", PROSE)), _expensive(expensive)],
+    )
+    r = cascade.extract(pdf_scanned)
+
+    notes = [a for a in r.attempts if a.step == "veto:witness"]
+    assert notes, "the absence of the witness has to be recorded"
+    assert "tesseract is not on the PATH" in notes[0].reason
+    # And it is a NOTE, not a veto: the expensive step still ran.
+    assert expensive.calls > 0
+
+
+def test_a_witness_that_raises_never_brings_the_cascade_down(monkeypatch, pdf_scanned):
+    witness = _Witness(None, raises=True)
+    _with_witness(monkeypatch, witness)
+    expensive = FakeEngine("expensive", PROSE)
+    cascade = Cascade(
+        Config(
+            min_chars_per_page=5000,
+            veto_engine="witness",
+            expensive_step_vetoes=True,
+            consensus_gate=False,
+            agreement_gate=False,
+        ),
+        steps=[NativeStep(), OCRStep(FakeEngine("cheap", PROSE)), _expensive(expensive)],
+    )
+    r = cascade.extract(pdf_scanned)
+
+    assert r.attempts
+    assert any(a.step == "veto:witness" and "failed to read" in a.reason for a in r.attempts)
+    assert expensive.calls > 0
+
+
+# ── per-page routing must not lose the native half ───────────────────────
+
+
+def test_routing_puts_the_ocr_page_back_among_the_native_ones(pdf_mixed):
+    """Routing is an economy, not a decision about what the document IS.
+
+    With `per_page_routing` on, only the pages WITHOUT native text are
+    rasterised — and the step's candidate used to be just those pages. On a
+    mixed filing that means the result is either the native text without the
+    scanned attachment, or the attachment without the pages around it, never the
+    union: measured on the shape this library was built for, a 39-page filing
+    with 29 native pages and a 10-page attachment lost 29 pages of text with
+    nothing in the provenance to say so.
+
+    `DoclingStep` had `_reassemble` for exactly this; `OCRStep` had no
+    counterpart.
+    """
+    marker = "MARCADOR DA PAGINA DIGITALIZADA que so o motor de OCR pode ler"
+    engine = FakeEngine("ocr", marker)
+    cascade = Cascade(
+        Config(per_page_routing=True, coverage_gate=False, consensus_gate=False),
+        steps=[NativeStep(), OCRStep(engine)],
+    )
+    r = cascade.extract(pdf_mixed)
+
+    # Only the one page without a text layer was rasterised.
+    ocr_attempt = next(a for a in r.attempts if a.step == "ocr")
+    assert ocr_attempt.details["ocr_pages"] == [2]
+    assert engine.calls == 1
+
+    # BOTH halves survive, and the OCR'd page sits between the native ones
+    # rather than at the end.
+    assert marker in r.text
+    assert "Pagina 1." in r.text
+    assert "Pagina 4." in r.text
+    assert r.text.index("Pagina 1.") < r.text.index(marker) < r.text.index("Pagina 4.")
+
+
+def test_the_merge_says_so_when_it_cannot_align(pdf_mixed):
+    """No alignment, no merge — and never in silence.
+
+    An engine that overrides `transcribe` without filling `page_texts` leaves
+    nothing to align by. Guessing the order would reintroduce the scrambling;
+    dropping the native pages quietly is the defect above. The only honest
+    answer is to keep the engine's text and record why.
+    """
+
+    class NoAlignment(FakeEngine):
+        def transcribe(self, pages, *, parallelism=4, force_parallelism=False):
+            from autosxtract.types import Transcription
+
+            return Transcription(
+                text=self.text,
+                engine=self.name,
+                pages_sent=len(pages),
+                pages_answered=len(pages),
+                mean_confidence=95.0,
+            )
+
+    engine = NoAlignment("ocr", "texto sem alinhamento nenhum por pagina")
+    cascade = Cascade(
+        Config(per_page_routing=True, coverage_gate=False, consensus_gate=False),
+        steps=[NativeStep(), OCRStep(engine)],
+    )
+    r = cascade.extract(pdf_mixed)
+
+    ocr_attempt = next(a for a in r.attempts if a.step == "ocr")
+    assert "native_merge" in ocr_attempt.details
+    assert "skipped" in ocr_attempt.details["native_merge"]
+
+
+# ── the acceptance gate sees the SCORE (CLAUDE.md §2) ────────────────────
+
+
+def test_low_quality_text_escalates_even_when_it_is_long_enough(pdf_scanned):
+    """`Config.min_score` reached the gate through nobody.
+
+    `OCRStep` computed the score for the contest and passed neither `score=` nor
+    `min_score=` to `evaluate`, so the gate's quality branch was unreachable in
+    production: text that cleared the word floor and the density floor stopped
+    the cascade whatever its quality, and the better engine underneath it never
+    ran. Half of "the same question with the same code" was not being asked.
+    """
+    # Long and word-rich enough to clear the word floor and the density floor,
+    # and junk by the scorer: `score_text` puts it at 0.40. `min_score` is
+    # raised above it so the assertion is about the WIRING — whether the
+    # configured floor reaches `evaluate` at all — rather than about where the
+    # shipped default happens to sit.
+    junk = " ".join(["xkq zwvb jhgf tprm ndsl" for _ in range(120)])
+    from autosxtract.quality.scoring import score_text
+
+    assert score_text(junk)["score"] < 0.5
+    good = FakeEngine("good", PROSE)
+    cascade = _cascade(
+        FakeEngine("junk", junk),
+        good,
+        min_score=0.5,
+        consensus_gate=False,
+        agreement_gate=False,
+    )
+    r = cascade.extract(pdf_scanned)
+
+    junk_attempt = next(a for a in r.attempts if a.step == "junk")
+    assert not junk_attempt.accepted
+    assert "below the minimum" in junk_attempt.reason
+    assert good.calls > 0, "the engine underneath the junk has to get its turn"

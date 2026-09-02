@@ -7,7 +7,9 @@ That is the whole idea, and it works for a reason that has nothing to do with
 models: the distribution is uneven. Measured across two real archives, 31% of
 documents already carry a text layer and cost 13.4 ms; only the rest pay the
 ~400 ms of an OCR engine. Collapsing the cascade into one good model was tried
-and measured — 6.2 minutes against 4.44 for 935 documents.
+and measured — 6.2 minutes against 4.44 for 935 documents. Both figures are
+CPU-against-CPU on [a 72-core Xeon with no GPU](architecture.md#the-machine-every-number-was-measured-on);
+an accelerator narrows the gap and does not touch the 31%.
 
 ```python
 from autosxtract import Cascade
@@ -41,12 +43,15 @@ ask the same question with the same code — [`quality/gate.py::evaluate`](gates
 Two competing criteria in one pipeline is the defect that function exists to
 stop repeating.
 
-**Nothing leaves the machine.** No worker, no tunnel, no endpoint, and `Config`
-has not a single host, port, URL or credential field. That is not a preference:
+**No document leaves the machine.** No worker, no tunnel, no endpoint, and
+`Config` has not a single host, port, URL or credential field. The only traffic
+the package can generate is **model weights, once** — `engines/models.py`, and
+the Hugging Face fetch that `engines/paddle.py` and `engines/onnx.py` do on
+first load with their heavier backends installed. That is not a preference:
 an earlier version of this pipeline reached the OCR engine over a reverse SSH
 tunnel, and the worker going down *silently degraded the text* — 488 documents
 re-extracted down the worse path, 28,239 characters lost, and nobody noticed
-until someone checked. See [ADR 0001](adr/0001-no-networking-in-the-default-cascade.md).
+until someone checked. See [ADR 0001](adr/index.md#0001-no-networking-in-the-default-cascade).
 
 **A missing tool degrades, it does not raise.** An engine that will not load
 answers `(False, reason)`, the step goes inert, and the reason reaches the
@@ -67,7 +72,7 @@ This library was built for one job and is honest about the rest.
   on 17 table pages: 0.699 value recall against **0.797**, at 6–29 s per page
   against 0.27 s. Across 895 pages, switching to the table model's output won on
   one page. If you need cells and spans, use a layout model — and read
-  [ADR 0008](adr/0008-patterns-are-data.md) first, because the answer depended
+  [ADR 0008](adr/index.md#0008-the-domain-patterns-are-data) first, because the answer depended
   on the archive.
 - **Your PDFs are clean, born-digital and all have a text layer.** Then
   `page.get_text()` is the whole job and this library is 300 MB of overhead for
@@ -96,14 +101,18 @@ This library was built for one job and is honest about the rest.
 
 - **[Getting started](getting-started.md)** — install, read `diagnose`, first
   extraction, and what `Result.provenance` is telling you.
+- **[Command line](cli.md)** — the three subcommands, every flag, and the exit
+  codes.
+- **[Python API](api.md)** — `Cascade`, `Result` and the shape of `to_dict()`:
+  what you receive.
 - **[Architecture](architecture.md)** — the five layers, the import direction,
   and where a decision is made versus where it is measured.
-- **[The interfaces](interfaces.md)** — the eleven protocols, what implements
-  each, and what breaks if you implement one wrong.
 - **[Quality gates](gates.md)** — acceptance versus replacement, the five
   vetoes, the containment layers, consensus and agreement.
+- **[Files that are not PDFs](formats.md)** — the 128 documents that arrive as
+  `.pdf` and are not, and the opt-in step that reads them.
 - **[Extending](extending/engine.md)** — a new engine, a new step, a new
-  pattern pack.
+  pattern pack, and the eleven protocols behind them.
 - **[Decision records](adr/index.md)** — the eleven decisions that have already
   been paid for once.
 

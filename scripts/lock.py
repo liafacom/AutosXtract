@@ -49,9 +49,31 @@ def canonical(name: str) -> str:
     return name.lower().replace("_", "-").replace(".", "-")
 
 
-def walk(name: str, extras: frozenset[str], found: dict[str, str], missing: set[str]) -> None:
-    """Depth-first over the *installed* metadata, honouring PEP 508 markers."""
+def walk(
+    name: str,
+    extras: frozenset[str],
+    found: dict[str, str],
+    missing: set[str],
+    seen: set[tuple[str, frozenset[str]]] | None = None,
+) -> None:
+    """Depth-first over the *installed* metadata, honouring PEP 508 markers.
+
+    ``seen`` is not an optimisation. Without it a cycle in installed metadata —
+    they exist in the wild — recurses to ``RecursionError``, and a diamond is
+    re-walked once per path rather than once per node, so the cost is exponential
+    in depth. It works on ``autosxtract[dev]`` because that graph is shallow,
+    which is luck rather than a property.
+
+    The memo is keyed on ``(name, extras)`` and not on the name alone: the same
+    distribution reached with different extras pulls in different requirements,
+    so collapsing them would drop pins.
+    """
+    if seen is None:
+        seen = set()
     key = canonical(name)
+    if (key, extras) in seen:
+        return
+    seen.add((key, extras))
     try:
         dist = metadata.distribution(name)
     except metadata.PackageNotFoundError:
@@ -74,7 +96,7 @@ def walk(name: str, extras: frozenset[str], found: dict[str, str], missing: set[
             wanted = extras or frozenset({""})
             if not any(req.marker.evaluate({"extra": e}) for e in wanted):
                 continue
-        walk(req.name, frozenset(req.extras), found, missing)
+        walk(req.name, frozenset(req.extras), found, missing, seen)
 
 
 def main() -> int:

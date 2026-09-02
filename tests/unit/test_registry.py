@@ -111,3 +111,57 @@ def test_int8_that_is_not_on_disk_says_so_instead_of_running_fp32():
     engine = PaddleEngine(quantized=True)
     engine._rapidocr_params()
     assert "INT8 REQUESTED but not on disk" in engine.model_in_use
+
+
+# ── the extension point must not refuse an engine over a docstring ───────
+
+
+def test_an_engine_without_a_docstring_can_be_registered():
+    """``register`` is the library's advertised extension point.
+
+    The description fell back to ``cls.__doc__.strip().splitlines()[0]``, which
+    is an ``IndexError`` on an empty list — so a class with no docstring blew up
+    at IMPORT time, and the module's own worked example declares
+    ``class MyOCR(OCREngine)`` with neither a docstring nor a ``description=``.
+    Copying the documentation crashed.
+
+    It also took the whole package down under ``python -OO``, where the
+    interpreter discards every ``__doc__``: nothing here would have been
+    importable at all.
+    """
+    saved = dict(engines._REGISTRY)
+    try:
+
+        @register(name="undocumented_probe", priority=999)
+        class Undocumented(OCREngine):  # no docstring, and that is the point
+            def available(self):
+                return False, "probe"
+
+        info = engines._REGISTRY["undocumented_probe"]
+        assert info.description == ""
+        assert info.factory is Undocumented
+    finally:
+        engines._REGISTRY.clear()
+        engines._REGISTRY.update(saved)
+
+
+def test_the_description_is_the_first_non_empty_docstring_line():
+    saved = dict(engines._REGISTRY)
+    try:
+
+        @register(name="documented_probe", priority=998)
+        class Documented(OCREngine):
+            """
+
+            The first line is blank on purpose.
+            """
+
+            def available(self):
+                return False, "probe"
+
+        assert engines._REGISTRY["documented_probe"].description == (
+            "The first line is blank on purpose."
+        )
+    finally:
+        engines._REGISTRY.clear()
+        engines._REGISTRY.update(saved)

@@ -125,29 +125,79 @@ def _rebalance_braces(markup: str) -> str:
     archive).
 
     Assumption: the file has a single root group — true across the whole
-    archive. That group's legitimate close is the **last** ``}`` in the file: it
-    is preserved, and with it Word's rule of discarding whatever follows. In
-    well-formed RTF no brace is dropped and the function returns its input
-    untouched.
+    archive. In well-formed RTF no brace is dropped and the function returns its
+    input untouched.
+
+    Finding the root group's close is the whole difficulty, and taking it to be
+    the **last** ``}`` in the file was wrong. A file with trailing bytes after
+    the root close — padding left over from carving the RTF out of a PKCS#7
+    envelope, which is where these files come from — inverts the rule: the
+    genuine close gets classified as the surplus one and dropped, the padding's
+    brace becomes the root close, and everything in between is promoted to
+    document body. Worse than merely wrong: the polluted text is LONGER, so it
+    also wins ``best_text`` and the final contest, which is the failure CLAUDE.md
+    §4 describes.
+
+    The discriminator is what comes AFTER a candidate close, and it has to be
+    RTF **control words**, not braces. What follows a surplus brace is the
+    document body, which is RTF: ``\\f0 … \\par``. What follows the real root
+    close is padding, which is bytes. Braces do not separate the two — the body
+    of the measured case contains none at all, so a rule keyed on ``{`` throws
+    the ruling away, which is the very defect this function exists to repair.
+
+    So: the root close is the **first** unescaped ``}`` with no unescaped control
+    word after it, and everything past it is discarded — Word's rule, which the
+    previous version claimed to follow while appending the tail whole. If no
+    candidate qualifies (a file that is control words all the way down), the last
+    ``}`` stands, which is the old behaviour.
     """
+    total = len(markup)
+
+    def _control_word_after(pos: int) -> bool:
+        """Is there an unescaped ``\\word`` after ``pos``? Then RTF continues."""
+        j = pos + 1
+        while j < total - 1:
+            if markup[j] == "\\":
+                if markup[j + 1].isalpha():
+                    return True
+                j += 2  # ``\\``, ``\{``, ``\}``, ``\'e7`` — an escape, not a word
+                continue
+            j += 1
+        return False
+
+    root_close = -1
+    i = 0
+    while i < total:
+        char = markup[i]
+        if char == "\\":
+            # Escapes (``\\``, ``\{``, ``\}``, ``\'e7``) never close a group.
+            i += 2
+            continue
+        if char == "}" and not _control_word_after(i):
+            root_close = i
+            break
+        i += 1
+    if root_close < 0:
+        root_close = markup.rfind("}")
+    if root_close < 0:
+        # No close at all: nothing to repair, and truncating would lose the lot.
+        return markup
+
     parts: list[str] = []
     start = 0
     depth = 0
     repaired = False
     i = 0
-    total = len(markup)
-    last_close = markup.rfind("}")
-    while i < total:
+    while i <= root_close:
         char = markup[i]
         if char == "\\":
-            # Escapes (``\\``, ``\{``, ``\}``, ``\'e7``) never open a group.
             i += 2
             continue
         if char == "{":
             depth += 1
         elif char == "}":
             if depth <= 1:
-                if i == last_close:
+                if i == root_close:
                     break  # the root group's legitimate close
                 parts.append(markup[start:i])
                 start = i + 1
@@ -158,7 +208,8 @@ def _rebalance_braces(markup: str) -> str:
         i += 1
     if not repaired:
         return markup
-    parts.append(markup[start:])
+    # Up to and including the root close, and not one byte further.
+    parts.append(markup[start : root_close + 1])
     return "".join(parts)
 
 

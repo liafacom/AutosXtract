@@ -76,10 +76,10 @@ def test_it_reads_lines_with_geometry():
             "linhas": [
                 {
                     "texto": "Processo 0010650-62.2001",
-                    "confianca": 0.95,
+                    "confianca": 95.0,
                     "poligono": [[10, 20], [200, 20], [200, 40], [10, 40]],
                 },
-                {"texto": "   ", "confianca": 0.10},
+                {"texto": "   ", "confianca": 10.0},
             ],
             "largura": 1200,
             "altura": 1600,
@@ -96,8 +96,14 @@ def test_it_reads_lines_with_geometry():
 
 def test_confidence_is_converted_to_the_zero_to_one_scale():
     """``Line`` wants 0-1. Forgetting makes every line look perfect and the
-    layer thresholds inert — which is a silent failure, the worst kind."""
-    engine, _ = _engine({"linhas": [{"texto": "a", "confianca": 0.5}]})
+    layer thresholds inert — which is a silent failure, the worst kind.
+
+    The input has to be on the protocol's scale for this to prove anything. The
+    earlier version fed ``0.5`` — already 0-1 — and asserted ``0.5`` back, so it
+    passed just as happily with no conversion at all: the assertion was an
+    identity, and the one line it existed to pin was free to be deleted.
+    """
+    engine, _ = _engine({"linhas": [{"texto": "a", "confianca": 50.0}]})
     page = engine.read_page(b"png")
     assert page is not None
     assert page.lines[0].score == 0.5
@@ -116,7 +122,7 @@ def test_a_worker_without_geometry_still_transcribes():
 
 def test_a_malformed_polygon_does_not_lose_the_text():
     engine, _ = _engine(
-        {"linhas": [{"texto": "vale", "confianca": 0.9, "poligono": [[1, 2], "lixo"]}]}
+        {"linhas": [{"texto": "vale", "confianca": 90.0, "poligono": [[1, 2], "lixo"]}]}
     )
     page = engine.read_page(b"png")
     assert page is not None
@@ -137,7 +143,7 @@ def test_it_posts_to_the_worker_ocr_endpoint():
 def test_pages_in_flight_default_to_the_measured_number():
     """With 4, a 15-page filing produced 5 timeouts on the worker; with 2 it
     keeps up. The engine holds the cascade to its own number by default."""
-    engine, client = _engine({"linhas": [{"texto": "x", "confianca": 0.9}]})
+    engine, client = _engine({"linhas": [{"texto": "x", "confianca": 90.0}]})
     assert engine.page_parallelism == 2
     engine.transcribe([b"a", b"b", b"c", b"d"], parallelism=8)
     # One round-trip per page and no more: the whole point of the engine.
@@ -231,7 +237,7 @@ def test_the_page_parallelism_can_be_raised_by_whoever_deploys():
     A ceiling nobody can lift is a measurement pretending to be a law, and it
     would make the library unusable on hardware it was never measured on.
     """
-    engine, client = _engine({"linhas": [{"texto": "x", "confianca": 0.9}]}, page_parallelism=6)
+    engine, client = _engine({"linhas": [{"texto": "x", "confianca": 90.0}]}, page_parallelism=6)
     assert engine.page_parallelism == 6
     engine.transcribe([b"a", b"b", b"c"], parallelism=6)
     assert len(client.calls) == 3
@@ -246,6 +252,6 @@ def test_it_never_goes_below_one():
 def test_the_cascade_can_still_ask_for_less():
     """The engine's number is a ceiling on ITS side, not a floor: a cascade
     tuned down for a small machine is obeyed."""
-    engine, client = _engine({"linhas": [{"texto": "x", "confianca": 0.9}]}, page_parallelism=8)
+    engine, client = _engine({"linhas": [{"texto": "x", "confianca": 90.0}]}, page_parallelism=8)
     engine.transcribe([b"a", b"b"], parallelism=1)
     assert len(client.calls) == 2

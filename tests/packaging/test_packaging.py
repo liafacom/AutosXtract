@@ -20,8 +20,16 @@ import pytest
 @pytest.fixture(scope="module")
 def dependencies() -> list[str]:
     required = requires("autosxtract")
-    if not required:
-        pytest.skip("package not installed (running outside an installed environment)")
+    # NOT a skip. ``requires`` returns None when the package is absent and a
+    # short or empty list when the metadata is malformed — and malformed
+    # metadata is precisely the "a wrong marker hides in the installed
+    # metadata" case this whole module exists to catch. A build that emitted no
+    # Requires-Dist used to skip all six tests green.
+    assert required, (
+        "autosxtract reports no Requires-Dist. Either the package is not "
+        "installed (run `pip install -e .`) or the built metadata is empty, "
+        "which is the failure this module exists to catch."
+    )
     # Extras carry "; extra == 'name'"; only the mandatory ones matter here.
     return [d for d in required if "extra ==" not in d]
 

@@ -67,11 +67,17 @@ jobs:
           pip install -e ".[dev]"
           pip install nbclient nbconvert ipykernel
 
-      # The PP-OCRv6 weights are fetched once, up front, so that a notebook
-      # that reaches the OCR step does not fail on a cold cache — and so the
-      # download failure, if it comes, is reported as a download failure rather
-      # than as a broken notebook.
-      - name: Download the OCR weights
+      # The PP-OCRv6 weights are fetched once, up front, so that a notebook that
+      # reaches the OCR step does not fail on a cold cache.
+      #
+      # `continue-on-error` is deliberate and its scope is narrow: this workflow
+      # is NOT a required check, and the library is built to degrade when the
+      # weights are absent — rapidocr's embedded model takes over. Failing the
+      # whole run on somebody else's CDN would teach everyone to ignore the red
+      # mark. The step is named so the annotation says which half broke; the
+      # notebooks below have no such flag and a genuinely broken notebook still
+      # fails the run.
+      - name: Download the OCR weights (best effort — the cascade degrades without them)
         if: steps.detect.outputs.found == 'true'
         run: python -m autosxtract.cli download-models
         continue-on-error: true

@@ -51,9 +51,50 @@ def test_no_field_points_at_a_network():
     It compares name PARTS rather than substrings: ``page_routing`` contains
     "rout" and would give a false impression of a violation.
     """
-    forbidden = {"host", "port", "url", "endpoint", "token", "key", "api", "secret"}
+    # Name PARTS, not substrings: ``page_routing`` contains "rout".
+    #
+    # The list is deliberately wider than the obvious four. It used to be
+    # {host, port, url, endpoint, token, key, api, secret}, which a field
+    # called ``worker_address``, ``docling_server``, ``remote_uri`` or
+    # ``vision_socket`` would have walked straight past — and §1's history is
+    # a reverse SSH TUNNEL and a Unix SOCKET, not a tidy https URL.
+    forbidden = {
+        "host",
+        "hostname",
+        "port",
+        "url",
+        "uri",
+        "endpoint",
+        "address",
+        "addr",
+        "server",
+        "service",
+        "socket",
+        "upstream",
+        "downstream",
+        "remote",
+        "tunnel",
+        "broker",
+        "queue",
+        "token",
+        "key",
+        "api",
+        "secret",
+        "credential",
+        "password",
+        "passwd",
+        "auth",
+        "bearer",
+        "webhook",
+        "proxy",
+        "dsn",
+    }
     for field in Config.model_fields:
-        assert not (set(field.lower().split("_")) & forbidden), field
+        # A trailing "s" is stripped from each part, so ``docling_hosts`` and
+        # ``worker_ports`` cannot walk past a list written in the singular.
+        parts = {p[:-1] if p.endswith("s") and len(p) > 3 else p for p in field.lower().split("_")}
+        parts |= set(field.lower().split("_"))
+        assert not (parts & forbidden), field
 
 
 # ── parallelism belongs to whoever runs it ───────────────────────────────
