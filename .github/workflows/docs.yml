@@ -115,6 +115,6 @@ jobs:
       # Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
       # With the source left on "Deploy from a branch" this step fails with a
       # message that does not obviously say so.
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - id: deployment
         uses: actions/deploy-pages@v4
