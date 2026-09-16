@@ -141,6 +141,14 @@ class Candidate:
     score: float
     ms: float = 0.0
     details: dict[str, Any] = field(default_factory=dict)
+    #: One entry per page of the DOCUMENT, aligned by page index, with an empty
+    #: string where the page produced nothing. Empty when the step that built
+    #: the candidate has no per-page view (a step returning one string, an
+    #: engine that overrides ``transcribe`` without filling
+    #: ``Transcription.page_texts``). ``text`` cannot be split back into pages —
+    #: a blank page leaves no separator behind — so a consumer that needs the
+    #: page grain takes this list, never a split of the joined text.
+    page_texts: list[str] = field(default_factory=list)
 
     @property
     def volume(self) -> int:
@@ -190,6 +198,13 @@ class Result:
     attempts: list[Attempt] = field(default_factory=list)
     discarded: list[Candidate] = field(default_factory=list)
     details: dict[str, Any] = field(default_factory=dict)
+    #: The winning text, page by page: one entry per page of the document,
+    #: aligned by page index (``page_texts[0]`` is page 1), an empty string
+    #: where the page produced nothing. Carried from the winning candidate;
+    #: empty when that candidate had no per-page view, or when nothing won
+    #: (``step`` is ``none`` or ``empty_by_consensus``). It is what lets a
+    #: consumer keep a per-page grain — ``text`` alone cannot be split back.
+    page_texts: list[str] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -221,5 +236,8 @@ class Result:
                 }
                 for a in self.attempts
             ],
+            # Only when there is something to say: a result with no per-page
+            # view serialises exactly as it did before the field existed.
+            **({"page_texts": list(self.page_texts)} if self.page_texts else {}),
             **self.details,
         }

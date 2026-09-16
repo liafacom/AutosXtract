@@ -116,6 +116,10 @@ class NativeStep:
             score=score,
             ms=ms,
             details={"label": assessment["label"], "reasons": assessment["reasons"]},
+            # ``read_native_text`` already has the page-by-page view: one entry
+            # per page, in order, empty where the layer had nothing. Passing it
+            # on costs nothing and is what lets a consumer keep the page grain.
+            page_texts=[page["text"] for page in pages],
         )
         ctx.record_reading(self.name, text)
 

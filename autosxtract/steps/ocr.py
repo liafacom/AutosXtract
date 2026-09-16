@@ -144,8 +144,16 @@ class OCRStep:
         # and has to go back into place before anything judges this step.
         merge: dict = {}
         covered = transcription.pages_sent
+        # The page-by-page view of what this step offers, aligned by page index.
+        # Without routing every page was rasterised, so the engine's own list
+        # (or the contained one, when the layers ran) already IS the document's.
+        # With routing only some pages were, and the merge below is what puts
+        # each one back at its index among the native pages.
+        page_texts: list[str] = list(contained or transcription.page_texts)
         if indices is not None:
-            text, merge, covered = self._merge_native(ctx, text, transcription, contained, indices)
+            text, merge, covered, page_texts = self._merge_native(
+                ctx, text, transcription, contained, indices
+            )
         details = {
             "confidence": transcription.mean_confidence,
             "pages": transcription.pages_answered,
@@ -186,7 +194,7 @@ class OCRStep:
                     ms,
                     details,
                 ),
-                self._candidate(text, ms, details),
+                self._candidate(text, ms, details, page_texts=page_texts),
             )
 
         if not transcription.complete:
@@ -201,7 +209,7 @@ class OCRStep:
                     ms,
                     details,
                 ),
-                self._candidate(text, ms, details),
+                self._candidate(text, ms, details, page_texts=page_texts),
             )
 
         # The score goes INTO the gate, not only into the candidate. Computing it
@@ -221,7 +229,7 @@ class OCRStep:
             stamps=ctx.config.stamp_patterns(),
         )
         ctx.record_reading(self.name, reading)
-        candidate = self._candidate(text, ms, details, score=score)
+        candidate = self._candidate(text, ms, details, score=score, page_texts=page_texts)
         if verdict.escalate:
             return StepResult(
                 Attempt(self.name, False, verdict.reason, len(text), ms, details), candidate
@@ -271,7 +279,7 @@ class OCRStep:
         transcription,
         contained: list[str],
         indices: list[int],
-    ) -> tuple[str, dict, int]:
+    ) -> tuple[str, dict, int, list[str]]:
         """Return each OCR'd page to its position among the native ones.
 
         Per-page routing is an economy, not a decision about what the document
@@ -288,16 +296,26 @@ class OCRStep:
         conversion. The alignment comes from the per-page lists, never from
         splitting the joined text — a blank page leaves no separator behind.
 
-        Returns ``(text, details, pages_covered)``. The third value is what the
-        replacement gate calls ``pages_sent``: how much of the DOCUMENT the text
-        now covers, which after a merge is the whole of it and not the handful
-        of pages the engine was handed.
+        Returns ``(text, details, pages_covered, page_texts)``. The third value
+        is what the replacement gate calls ``pages_sent``: how much of the
+        DOCUMENT the text now covers, which after a merge is the whole of it and
+        not the handful of pages the engine was handed. The fourth is the same
+        document page by page — one entry per native page, the OCR'd text where
+        a page was routed and the layer's text elsewhere — and it is EMPTY
+        whenever the merge is skipped: the text then covers only the routed
+        pages, and a per-page list that does not span the document would be
+        misread as one that does.
         """
         if not ctx.config.use_native:
             # The operator switched the text layer off. Reading it here anyway,
             # to splice it into another step's candidate, would be this step
             # deciding to overrule that.
-            return text, {"native_merge": "skipped: use_native is off"}, transcription.pages_sent
+            return (
+                text,
+                {"native_merge": "skipped: use_native is off"},
+                transcription.pages_sent,
+                [],
+            )
 
         from autosxtract.steps.native import read_native_text
 
@@ -313,6 +331,7 @@ class OCRStep:
                 text,
                 {"native_merge": f"skipped: {len(per_page)} page texts for {len(indices)} pages"},
                 transcription.pages_sent,
+                [],
             )
         _, native = read_native_text(ctx.pdf_bytes)
         if not native:
@@ -320,18 +339,32 @@ class OCRStep:
                 text,
                 {"native_merge": "skipped: the text layer could not be read"},
                 transcription.pages_sent,
+                [],
             )
         ocr_by_page = {page: per_page[n] for n, page in enumerate(indices) if per_page[n].strip()}
         out: list[str] = []
+        page_texts: list[str] = []
         merged = 0
         for i, page in enumerate(native):
             if i in ocr_by_page:
                 out.append(ocr_by_page[i])
+                page_texts.append(ocr_by_page[i])
             elif page["text"].strip():
                 out.append(page["text"].strip())
+                page_texts.append(page["text"].strip())
                 merged += 1
+            else:
+                # A page neither engine nor layer had anything for keeps its
+                # slot: dropping it here is what would shift every page after
+                # it by one.
+                page_texts.append("")
         if not out:
-            return text, {"native_merge": "skipped: nothing to assemble"}, transcription.pages_sent
+            return (
+                text,
+                {"native_merge": "skipped: nothing to assemble"},
+                transcription.pages_sent,
+                [],
+            )
         # The merged text spans the whole document, so that is what it covers.
         # Reporting the routed page count here made the replacement gate read
         # `document_pages > pages_sent`, call a complete document a partial
@@ -340,10 +373,17 @@ class OCRStep:
             "\n\n".join(out),
             {"native_pages_merged": merged, "native_merge": "merged"},
             len(native),
+            page_texts,
         )
 
     def _candidate(
-        self, text: str, ms: float, details: dict, *, score: float | None = None
+        self,
+        text: str,
+        ms: float,
+        details: dict,
+        *,
+        score: float | None = None,
+        page_texts: list[str] | None = None,
     ) -> Candidate:
         return Candidate(
             step=self.name,
@@ -351,4 +391,5 @@ class OCRStep:
             score=self.scorer(text)["score"] if score is None else score,
             ms=ms,
             details=details,
+            page_texts=list(page_texts or []),
         )

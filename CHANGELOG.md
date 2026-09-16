@@ -32,7 +32,20 @@ generated list is the *receipt*. The whole procedure is in `RELEASING.md`.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `Result.page_texts` and `Candidate.page_texts`: the winning text **page by
+  page**, one entry per page of the document, aligned by index, an empty string
+  where a page produced nothing. The native step fills it from the per-page
+  statistics it already computed; the OCR step from `Transcription.page_texts`
+  (or the contained pages when the layers ran), and across the per-page routing
+  merge each OCR'd page is put back at its own index among the native ones.
+  Empty whenever there is no honest alignment — an engine with no per-page
+  list, a merge that was skipped, nothing won — never a guess.
+  `Result.to_dict()` writes the key only when the list is non-empty, so
+  existing JSON output is unchanged. What it prevents: a consumer that needs
+  the page grain splitting `text` on blank lines, which misplaces every page
+  after a blank one and cuts a page whose own text contains a blank line.
 
 ## [0.6.0] — 2026-09-02
 

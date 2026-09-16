@@ -43,6 +43,7 @@ that fell through, 682 of them ending with zero characters.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 from autosxtract.config import Config
@@ -179,7 +180,7 @@ class Cascade:
             if result.accepted:
                 return self._close(result.candidate, candidates, attempts, t0)
 
-            agreed = self._agreement(ctx, attempts)
+            agreed = self._agreement(ctx, attempts, candidates)
             if agreed is not None:
                 return self._close(agreed, candidates, attempts, t0)
 
@@ -221,7 +222,9 @@ class Cascade:
         return {p.name: r for p, r in zip(resolved, results, strict=True)}
 
     # ── gates ────────────────────────────────────────────────────────────
-    def _agreement(self, ctx: Context, attempts: list[Attempt]) -> Candidate | None:
+    def _agreement(
+        self, ctx: Context, attempts: list[Attempt], candidates: Sequence[Candidate] = ()
+    ) -> Candidate | None:
         """Did two engines read the same thing? Then the reading is complete.
 
         This gate answers a question none of the others does: the first four ask
@@ -245,7 +248,7 @@ class Cascade:
         )
         if not agreement.agree:
             return None
-        best = _best_of_texts(ctx)
+        best = _best_of_texts(ctx, candidates)
         if best is None:
             return None
         attempts.append(
@@ -469,6 +472,15 @@ class Cascade:
         if winner is None:
             return Result(text="", step="none", score=None, ms=ms, attempts=attempts)
         text = normalize(winner.text) if self.config.rebuild_prose else winner.text
+        # The pages get the SAME treatment as the joined text, page by page —
+        # otherwise ``text`` and ``page_texts`` would describe two different
+        # outputs of one extraction, and a consumer comparing them would find
+        # prose in one and broken lines in the other.
+        page_texts = (
+            [normalize(page) for page in winner.page_texts]
+            if self.config.rebuild_prose
+            else list(winner.page_texts)
+        )
         return Result(
             text=text,
             step=winner.step,
@@ -477,20 +489,41 @@ class Cascade:
             attempts=attempts,
             discarded=losers(candidates, winner),
             details=dict(winner.details),
+            page_texts=page_texts,
         )
 
 
-def _best_of_texts(ctx: Context) -> Candidate | None:
+def _best_of_texts(ctx: Context, candidates: Sequence[Candidate] = ()) -> Candidate | None:
     """The best among the texts already read, to close via the agreement gate.
 
     It rebuilds candidates from what is in the context rather than holding a
     reference: that way the gate works identically for any set of engines,
     including ones somebody adds later.
+
+    ``candidates`` — the ones the steps actually produced — is consulted for
+    one thing only: the per-page view. The context holds a reading as a single
+    string, and a candidate whose text is that very string lends it its
+    ``page_texts``. A candidate whose text differs (the OCR step's, after the
+    native merge, against the engine's bare reading) lends nothing: a per-page
+    list of one text attached to another would be misaligned by construction.
     """
     from autosxtract.quality.scoring import score_text
 
+    by_step = {c.step: c for c in candidates}
+
+    def pages_of(engine: str, text: str) -> list[str]:
+        produced = by_step.get(engine)
+        if produced is not None and produced.text == text:
+            return list(produced.page_texts)
+        return []
+
     rebuilt = [
-        Candidate(step=engine, text=text, score=score_text(text)["score"])
+        Candidate(
+            step=engine,
+            text=text,
+            score=score_text(text)["score"],
+            page_texts=pages_of(engine, text),
+        )
         for engine, text in ctx.texts.items()
         if (text or "").strip()
     ]

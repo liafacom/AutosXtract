@@ -46,9 +46,20 @@ result.ms            # float
 result.attempts      # list[Attempt]     — every step that ran, in order
 result.discarded     # list[Candidate]   — texts that lost the contest
 result.details       # dict              — merged into to_dict()
+result.page_texts    # list[str]         — the winning text page by page, aligned by index
 result.empty         # property: text is blank or whitespace
 result.provenance    # property: the auditable sentence
 ```
+
+`page_texts` has one entry per page of the document — `page_texts[0]` is page
+1 — with an empty string where a page produced nothing, so a blank page keeps
+its slot and the pages after it do not shift. It is empty when the winning step
+had no per-page view (an engine that overrides `transcribe` without filling
+`Transcription.page_texts`, a routing merge that could not align) or when
+nothing won. `text` cannot be split back into pages — a blank page leaves no
+separator behind — so a consumer that needs the page grain takes this list.
+`to_dict()` includes the key **only when the list is non-empty**, so output
+written before the field existed is byte-for-byte unchanged.
 
 **`result.step` and the last entry of `result.attempts` are frequently
 different**, and that is the design, not a bug: a step may refuse itself and
@@ -109,7 +120,7 @@ verdict and the text.
 
 ```python
 Attempt(step, accepted, reason, chars=0, ms=0.0, details={})
-Candidate(step, text, score, ms=0.0, details={})
+Candidate(step, text, score, ms=0.0, details={}, page_texts=[])
 ```
 
 `Attempt.reason` is a sentence in words, and it is the reason the provenance is
